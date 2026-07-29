@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 from nanet_menu.models import DailyMenu
 
 _WEEKDAYS = "월화수목금토일"
@@ -8,7 +10,12 @@ _SECTION_PRIORITY = {
 }
 
 
-def format_slack_message(menu: DailyMenu) -> str:
+class SlackPayload(TypedDict):
+    text: str
+    blocks: list[dict[str, object]]
+
+
+def format_slack_payload(menu: DailyMenu) -> SlackPayload:
     target = menu.menu_date
     lines = [
         f"🍽️ *{target.month}월 {target.day}일 {_WEEKDAYS[target.weekday()]}요일 국회도서관 식단*"
@@ -20,7 +27,20 @@ def format_slack_message(menu: DailyMenu) -> str:
             len(_SECTION_PRIORITY),
         ),
     )
-    for section in sections:
+    blocks: list[dict[str, object]] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": (
+                    f"🍽️ {target.month}월 {target.day}일 "
+                    f"{_WEEKDAYS[target.weekday()]}요일 국회도서관 식단"
+                ),
+                "emoji": True,
+            },
+        }
+    ]
+    for index, section in enumerate(sections):
         lines.extend(
             [
                 "",
@@ -28,5 +48,32 @@ def format_slack_message(menu: DailyMenu) -> str:
                 *(f"- {item}" for item in section.items),
             ]
         )
+        if index:
+            blocks.append({"type": "divider"})
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "\n".join(
+                        [
+                            f"*{section.restaurant} · {section.meal}*",
+                            *(f"• {item}" for item in section.items),
+                        ]
+                    ),
+                },
+            }
+        )
     lines.extend(["", f"<{menu.source_url}|주간식단표 원문 보기>"])
-    return "\n".join(lines)
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"<{menu.source_url}|주간식단표 원문 보기>",
+                }
+            ],
+        }
+    )
+    return {"text": "\n".join(lines), "blocks": blocks}

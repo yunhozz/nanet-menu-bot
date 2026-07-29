@@ -66,10 +66,9 @@ pytest -m integration
    `SLACK_WEBHOOK_URL` 이름으로 Webhook URL을 등록합니다.
 4. 저장소의 **Actions** 탭에서 워크플로 실행을 허용합니다.
 
-`daily-menu.yml`은 월요일부터 금요일까지 `Asia/Seoul` 오전 09:07에 실행됩니다. 정각의 GitHub
-Actions 예약 실행 혼잡을 피하려고 7분을 사용합니다. 예약 워크플로는
-default branch에 있는 최신 워크플로만 실행되므로 해당 파일을 default
-branch에 반영해야 합니다. 수동 실행은 **Actions → Daily menu → Run
+`daily-menu.yml`은 월요일부터 금요일까지 `Asia/Seoul` 오전 10:00에 실행됩니다. 예약
+워크플로는 default branch에 있는 최신 워크플로만 실행되므로 해당 파일을
+default branch에 반영해야 합니다. 수동 실행은 **Actions → Daily menu → Run
 workflow**에서 하며 기본값은 안전한 dry-run입니다.
 
 ## 장애 확인과 PDF 변경 대응

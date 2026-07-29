@@ -7,15 +7,16 @@ from nanet_menu.errors import SlackError
 from nanet_menu.slack import post_to_slack
 
 WEBHOOK = "https://hooks.slack.test/services/SECRET/VALUE"
+PAYLOAD = {"text": "hello", "blocks": []}
 
 
 @responses.activate
 def test_webhook_success():
     responses.post(WEBHOOK, body="ok", status=200)
 
-    post_to_slack(WEBHOOK, "hello")
+    post_to_slack(WEBHOOK, PAYLOAD)
 
-    assert responses.calls[0].request.body == b'{"text": "hello"}'
+    assert responses.calls[0].request.body == b'{"text": "hello", "blocks": []}'
 
 
 @responses.activate
@@ -23,7 +24,7 @@ def test_webhook_4xx_is_not_retried():
     responses.post(WEBHOOK, body="invalid_payload", status=400)
 
     with pytest.raises(SlackError, match="status=400"):
-        post_to_slack(WEBHOOK, "hello")
+        post_to_slack(WEBHOOK, PAYLOAD)
 
     assert len(responses.calls) == 1
 
@@ -35,7 +36,7 @@ def test_webhook_5xx_is_retried(monkeypatch):
     responses.post(WEBHOOK, body="error", status=503)
     responses.post(WEBHOOK, body="ok", status=200)
 
-    post_to_slack(WEBHOOK, "hello")
+    post_to_slack(WEBHOOK, PAYLOAD)
 
     assert len(responses.calls) == 3
 
@@ -46,6 +47,6 @@ def test_webhook_url_is_not_logged(caplog):
     caplog.set_level(logging.DEBUG)
 
     with pytest.raises(SlackError):
-        post_to_slack(WEBHOOK, "hello")
+        post_to_slack(WEBHOOK, PAYLOAD)
 
     assert WEBHOOK not in caplog.text

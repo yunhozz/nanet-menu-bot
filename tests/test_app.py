@@ -7,7 +7,8 @@ from nanet_menu.errors import NanetMenuError
 
 
 def test_dry_run_does_not_call_slack(monkeypatch, capsys):
-    monkeypatch.setattr(app, "build_message", lambda target: "menu message")
+    payload = {"text": "menu message", "blocks": []}
+    monkeypatch.setattr(app, "build_message", lambda target: payload)
 
     def fail_if_called(*args, **kwargs):
         pytest.fail("Slack must not be called in dry-run mode")
@@ -19,7 +20,11 @@ def test_dry_run_does_not_call_slack(monkeypatch, capsys):
 
 
 def test_send_requires_webhook_environment(monkeypatch):
-    monkeypatch.setattr(app, "build_message", lambda target: "menu message")
+    monkeypatch.setattr(
+        app,
+        "build_message",
+        lambda target: {"text": "menu message", "blocks": []},
+    )
     monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
 
     with pytest.raises(NanetMenuError, match="SLACK_WEBHOOK_URL"):
