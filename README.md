@@ -1,6 +1,6 @@
 # nanet-menu
 
-국회도서관 공지사항의 최신 주간식단표 PDF에서 오늘 식단을 읽어 매일 아침
+국회도서관 공지사항의 최신 주간식단표 PDF에서 오늘 식단을 읽어 평일 아침
 Slack Incoming Webhook으로 전송하는 Python 3.12 프로젝트입니다.
 
 ## 동작 방식
@@ -66,7 +66,7 @@ pytest -m integration
    `SLACK_WEBHOOK_URL` 이름으로 Webhook URL을 등록합니다.
 4. 저장소의 **Actions** 탭에서 워크플로 실행을 허용합니다.
 
-`daily-menu.yml`은 `Asia/Seoul` 오전 09:07에 실행됩니다. 정각의 GitHub
+`daily-menu.yml`은 월요일부터 금요일까지 `Asia/Seoul` 오전 09:07에 실행됩니다. 정각의 GitHub
 Actions 예약 실행 혼잡을 피하려고 7분을 사용합니다. 예약 워크플로는
 default branch에 있는 최신 워크플로만 실행되므로 해당 파일을 default
 branch에 반영해야 합니다. 수동 실행은 **Actions → Daily menu → Run
