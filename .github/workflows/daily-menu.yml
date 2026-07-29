@@ -1,0 +1,44 @@
+name: Daily menu
+
+on:
+  schedule:
+    - cron: "7 9 * * *"
+      timezone: "Asia/Seoul"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Slack에 전송하지 않고 결과만 출력"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-nanet-menu
+  cancel-in-progress: false
+
+jobs:
+  post-menu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install .
+      - name: Scheduled Slack post
+        if: github.event_name == 'schedule'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m nanet_menu
+      - name: Manual dry-run
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: python -m nanet_menu --dry-run
+      - name: Manual Slack post
+        if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m nanet_menu
