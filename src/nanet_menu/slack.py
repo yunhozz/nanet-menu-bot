@@ -26,6 +26,10 @@ def post_to_slack(
 
         if response.status_code == 200 and response.text.strip() == "ok":
             return
+        if response.status_code == 429 and attempt < max_attempts:
+            retry_after = float(response.headers["Retry-After"])
+            time.sleep(max(0.0, retry_after))
+            continue
         if 500 <= response.status_code < 600 and attempt < max_attempts:
             time.sleep(0.25 * attempt)
             continue

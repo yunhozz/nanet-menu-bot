@@ -42,6 +42,19 @@ def test_webhook_5xx_is_retried(monkeypatch):
 
 
 @responses.activate
+def test_webhook_429_honors_retry_after(monkeypatch):
+    delays = []
+    monkeypatch.setattr("nanet_menu.slack.time.sleep", delays.append)
+    responses.post(WEBHOOK, body="rate_limited", status=429, headers={"Retry-After": "2"})
+    responses.post(WEBHOOK, body="ok", status=200)
+
+    post_to_slack(WEBHOOK, PAYLOAD)
+
+    assert delays == [2.0]
+    assert len(responses.calls) == 2
+
+
+@responses.activate
 def test_webhook_url_is_not_logged(caplog):
     responses.post(WEBHOOK, body="invalid_payload", status=400)
     caplog.set_level(logging.DEBUG)

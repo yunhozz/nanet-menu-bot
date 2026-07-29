@@ -1,3 +1,4 @@
+from datetime import date
 from typing import TypedDict
 
 from nanet_menu.models import DailyMenu
@@ -14,6 +15,43 @@ class SlackPayload(TypedDict):
     text: str
     mrkdwn: bool
     blocks: list[dict[str, object]]
+
+
+def format_failure_alert_payload(
+    target: date,
+    error: str,
+    run_url: str | None = None,
+) -> SlackPayload:
+    detail = error[:2800]
+    lines = [f"🚨 {target} 국회도서관 식단 알림 실패", detail]
+    blocks: list[dict[str, object]] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"🚨 {target} 식단 알림 실패",
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "text": {"type": "plain_text", "text": detail},
+        },
+    ]
+    if run_url:
+        lines.append(f"GitHub Actions 실행 로그: {run_url}")
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"<{run_url}|GitHub Actions 실행 로그 보기>",
+                    }
+                ],
+            }
+        )
+    return {"text": "\n".join(lines), "mrkdwn": False, "blocks": blocks}
 
 
 def format_slack_payload(menu: DailyMenu) -> SlackPayload:

@@ -1,6 +1,6 @@
 from datetime import date
 
-from nanet_menu.formatter import format_slack_payload
+from nanet_menu.formatter import format_failure_alert_payload, format_slack_payload
 from nanet_menu.models import DailyMenu, MenuSection
 
 
@@ -145,4 +145,22 @@ def test_external_menu_text_is_not_interpreted_as_slack_markup():
                 ],
             },
         ],
+    }
+
+
+def test_failure_alert_is_plain_text_and_links_to_the_workflow_run():
+    payload = format_failure_alert_payload(
+        date(2026, 7, 29),
+        "PDF에서 <!here> *식단*을 찾지 못했습니다.",
+        "https://github.com/example/nanet-menu-bot/actions/runs/1234",
+    )
+
+    assert payload["mrkdwn"] is False
+    assert "PDF에서 <!here> *식단*을 찾지 못했습니다." in payload["text"]
+    assert payload["blocks"][1] == {
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": "PDF에서 <!here> *식단*을 찾지 못했습니다.",
+        },
     }

@@ -36,10 +36,13 @@ python -m nanet_menu --date 2026-07-29 --dry-run
 
 ```bash
 export SLACK_WEBHOOK_URL="<Slack Incoming Webhook URL>"
+export SLACK_ALERT_WEBHOOK_URL="<별도 운영 채널의 Incoming Webhook URL>"
 python -m nanet_menu
 ```
 
-Webhook URL은 코드, 설정 파일, 로그에 저장하지 마십시오.
+`SLACK_ALERT_WEBHOOK_URL`은 선택 사항입니다. 설정하면 메뉴 수집·파싱 또는
+Slack 전송 실패 시 별도 운영 채널에 오류와 GitHub Actions 실행 링크를
+전송합니다. Webhook URL은 코드, 설정 파일, 로그에 저장하지 마십시오.
 
 ## 테스트와 린트
 
@@ -64,12 +67,17 @@ pytest -m integration
 2. **Add New Webhook to Workspace**에서 고정 채널을 선택합니다.
 3. GitHub 저장소의 **Settings → Secrets and variables → Actions**에서
    `SLACK_WEBHOOK_URL` 이름으로 Webhook URL을 등록합니다.
-4. 저장소의 **Actions** 탭에서 워크플로 실행을 허용합니다.
+4. 실패 알림을 사용하려면 별도 운영 채널의 Webhook URL을
+   `SLACK_ALERT_WEBHOOK_URL` 이름으로 등록합니다.
+5. 저장소의 **Actions** 탭에서 워크플로 실행을 허용합니다.
 
 `daily-menu.yml`은 월요일부터 금요일까지 `Asia/Seoul` 오전 10:00에 실행됩니다. 예약
 워크플로는 default branch에 있는 최신 워크플로만 실행되므로 해당 파일을
 default branch에 반영해야 합니다. 수동 실행은 **Actions → Daily menu → Run
-workflow**에서 하며 기본값은 안전한 dry-run입니다.
+workflow**에서 하며 기본값은 안전한 dry-run입니다. 성공한 예약 전송은
+날짜별 Actions 캐시에 기록되어 같은 날짜의 예약 워크플로를 재실행해도
+중복 전송하지 않습니다. 명시적인 수동 실전송은 이 중복 방지를 적용하지
+않습니다.
 
 ## 장애 확인과 PDF 변경 대응
 
