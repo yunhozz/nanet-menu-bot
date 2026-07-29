@@ -14,8 +14,9 @@ def test_slack_message_format():
 
     payload = format_slack_payload(menu)
 
-    assert "🍽️ *7월 29일 수요일 국회도서관 식단*" in payload["text"]
+    assert "🍽️ 7월 29일 수요일 국회도서관 식단" in payload["text"]
     assert "- 김치찌개\n- 현미밥" in payload["text"]
+    assert payload["mrkdwn"] is False
     assert payload["blocks"] == [
         {
             "type": "header",
@@ -26,11 +27,33 @@ def test_slack_message_format():
             },
         },
         {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*구내식당 · 중식*\n• 김치찌개\n• 현미밥",
-            },
+            "type": "rich_text",
+            "elements": [
+                {
+                    "type": "rich_text_section",
+                    "elements": [
+                        {
+                            "type": "text",
+                            "text": "구내식당 · 중식",
+                            "style": {"bold": True},
+                        }
+                    ],
+                },
+                {
+                    "type": "rich_text_list",
+                    "style": "bullet",
+                    "elements": [
+                        {
+                            "type": "rich_text_section",
+                            "elements": [{"type": "text", "text": "김치찌개"}],
+                        },
+                        {
+                            "type": "rich_text_section",
+                            "elements": [{"type": "text", "text": "현미밥"}],
+                        },
+                    ],
+                },
+            ],
         },
         {
             "type": "context",
@@ -61,16 +84,65 @@ def test_priority_sections_come_first_without_reordering_the_rest():
     payload = format_slack_payload(menu)
 
     headings = [
-        "*박물관식당 · 중식*",
-        "*도서관식당 · 중식*",
-        "*도서관식당 · 석식*",
-        "*본관1식당 · 조식*",
-        "*회관1식당 · 중식*",
+        "박물관식당 · 중식",
+        "도서관식당 · 중식",
+        "도서관식당 · 석식",
+        "본관1식당 · 조식",
+        "회관1식당 · 중식",
     ]
-    section_texts = [
-        block["text"]["text"] for block in payload["blocks"] if block["type"] == "section"
+    heading_texts = [
+        block["elements"][0]["elements"][0]["text"]
+        for block in payload["blocks"]
+        if block["type"] == "rich_text"
     ]
-    heading_indexes = [
-        next(i for i, text in enumerate(section_texts) if heading in text) for heading in headings
-    ]
+    heading_indexes = [heading_texts.index(heading) for heading in headings]
     assert heading_indexes == sorted(heading_indexes)
+
+
+def test_external_menu_text_is_not_interpreted_as_slack_markup():
+    menu = DailyMenu(
+        date(2026, 7, 29),
+        (
+            MenuSection(
+                "*R&D* <본관>",
+                "_중식_",
+                ("<!here> & 생선", "`특식` ~한정~"),
+            ),
+        ),
+        "주간식단표",
+        "https://example.test/notice",
+    )
+
+    payload = format_slack_payload(menu)
+
+    assert payload["mrkdwn"] is False
+    assert "*R&D* <본관> · _중식_" in payload["text"]
+    assert payload["blocks"][1] == {
+        "type": "rich_text",
+        "elements": [
+            {
+                "type": "rich_text_section",
+                "elements": [
+                    {
+                        "type": "text",
+                        "text": "*R&D* <본관> · _중식_",
+                        "style": {"bold": True},
+                    }
+                ],
+            },
+            {
+                "type": "rich_text_list",
+                "style": "bullet",
+                "elements": [
+                    {
+                        "type": "rich_text_section",
+                        "elements": [{"type": "text", "text": "<!here> & 생선"}],
+                    },
+                    {
+                        "type": "rich_text_section",
+                        "elements": [{"type": "text", "text": "`특식` ~한정~"}],
+                    },
+                ],
+            },
+        ],
+    }

@@ -7,7 +7,7 @@ from nanet_menu.errors import NanetMenuError
 
 
 def test_dry_run_does_not_call_slack(monkeypatch, capsys):
-    payload = {"text": "menu message", "blocks": []}
+    payload = {"text": "menu message", "mrkdwn": False, "blocks": []}
     monkeypatch.setattr(app, "build_message", lambda target: payload)
 
     def fail_if_called(*args, **kwargs):
@@ -23,7 +23,7 @@ def test_send_requires_webhook_environment(monkeypatch):
     monkeypatch.setattr(
         app,
         "build_message",
-        lambda target: {"text": "menu message", "blocks": []},
+        lambda target: {"text": "menu message", "mrkdwn": False, "blocks": []},
     )
     monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
 

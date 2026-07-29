@@ -7,7 +7,7 @@ from nanet_menu.errors import SlackError
 from nanet_menu.slack import post_to_slack
 
 WEBHOOK = "https://hooks.slack.test/services/SECRET/VALUE"
-PAYLOAD = {"text": "hello", "blocks": []}
+PAYLOAD = {"text": "hello", "mrkdwn": False, "blocks": []}
 
 
 @responses.activate
@@ -16,7 +16,7 @@ def test_webhook_success():
 
     post_to_slack(WEBHOOK, PAYLOAD)
 
-    assert responses.calls[0].request.body == b'{"text": "hello", "blocks": []}'
+    assert responses.calls[0].request.body == b'{"text": "hello", "mrkdwn": false, "blocks": []}'
 
 
 @responses.activate

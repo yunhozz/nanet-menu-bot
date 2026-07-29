@@ -12,14 +12,13 @@ _SECTION_PRIORITY = {
 
 class SlackPayload(TypedDict):
     text: str
+    mrkdwn: bool
     blocks: list[dict[str, object]]
 
 
 def format_slack_payload(menu: DailyMenu) -> SlackPayload:
     target = menu.menu_date
-    lines = [
-        f"🍽️ *{target.month}월 {target.day}일 {_WEEKDAYS[target.weekday()]}요일 국회도서관 식단*"
-    ]
+    lines = [f"🍽️ {target.month}월 {target.day}일 {_WEEKDAYS[target.weekday()]}요일 국회도서관 식단"]
     sections = sorted(
         menu.sections,
         key=lambda section: _SECTION_PRIORITY.get(
@@ -44,7 +43,7 @@ def format_slack_payload(menu: DailyMenu) -> SlackPayload:
         lines.extend(
             [
                 "",
-                f"*{section.restaurant} · {section.meal}*",
+                f"{section.restaurant} · {section.meal}",
                 *(f"- {item}" for item in section.items),
             ]
         )
@@ -52,19 +51,33 @@ def format_slack_payload(menu: DailyMenu) -> SlackPayload:
             blocks.append({"type": "divider"})
         blocks.append(
             {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "\n".join(
-                        [
-                            f"*{section.restaurant} · {section.meal}*",
-                            *(f"• {item}" for item in section.items),
-                        ]
-                    ),
-                },
+                "type": "rich_text",
+                "elements": [
+                    {
+                        "type": "rich_text_section",
+                        "elements": [
+                            {
+                                "type": "text",
+                                "text": f"{section.restaurant} · {section.meal}",
+                                "style": {"bold": True},
+                            }
+                        ],
+                    },
+                    {
+                        "type": "rich_text_list",
+                        "style": "bullet",
+                        "elements": [
+                            {
+                                "type": "rich_text_section",
+                                "elements": [{"type": "text", "text": item}],
+                            }
+                            for item in section.items
+                        ],
+                    },
+                ],
             }
         )
-    lines.extend(["", f"<{menu.source_url}|주간식단표 원문 보기>"])
+    lines.extend(["", f"주간식단표 원문 보기: {menu.source_url}"])
     blocks.append(
         {
             "type": "context",
@@ -76,4 +89,4 @@ def format_slack_payload(menu: DailyMenu) -> SlackPayload:
             ],
         }
     )
-    return {"text": "\n".join(lines), "blocks": blocks}
+    return {"text": "\n".join(lines), "mrkdwn": False, "blocks": blocks}
