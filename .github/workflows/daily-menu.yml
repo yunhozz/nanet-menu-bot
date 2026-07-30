@@ -2,7 +2,7 @@ name: Daily menu
 
 on:
   schedule:
-    - cron: "0 10 * * 1-5"
+    - cron: "7 10 * * 1-5"
       timezone: "Asia/Seoul"
   workflow_dispatch:
     inputs:
@@ -45,6 +45,8 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
+          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
         run: python -m nanet_menu
       - name: Mark scheduled delivery complete
         if: github.event_name == 'schedule' && steps.delivery-state.outputs.cache-hit != 'true'
@@ -60,4 +62,6 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
+          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
         run: python -m nanet_menu

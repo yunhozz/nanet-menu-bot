@@ -37,12 +37,22 @@ python -m nanet_menu --date 2026-07-29 --dry-run
 ```bash
 export SLACK_WEBHOOK_URL="<Slack Incoming Webhook URL>"
 export SLACK_ALERT_WEBHOOK_URL="<별도 운영 채널의 Incoming Webhook URL>"
+export NAVER_API_HUB_CLIENT_ID="<NAVER API HUB Client ID>"
+export NAVER_API_HUB_CLIENT_SECRET="<NAVER API HUB Client Secret>"
 python -m nanet_menu
 ```
 
 `SLACK_ALERT_WEBHOOK_URL`은 선택 사항입니다. 설정하면 메뉴 수집·파싱 또는
 Slack 전송 실패 시 별도 운영 채널에 오류와 GitHub Actions 실행 링크를
 전송합니다. Webhook URL은 코드, 설정 파일, 로그에 저장하지 마십시오.
+
+각 음식에는 NAVER API HUB 이미지 검색의 첫 번째 결과가 썸네일로 표시됩니다.
+NAVER Cloud Platform 콘솔에서 NAVER API HUB 애플리케이션을 등록한 뒤 Client
+ID와 Client Secret을 발급받아야 합니다. 개별 음식의 검색 실패나 결과 없음은
+해당 음식만 이미지 없이 표시하며, 인증 정보가 없으면 실제 Slack 전송은
+실패합니다. 음식별 블록이 Slack의 메시지당 50블록 제한을 넘으면 식당·식사
+구분을 유지한 채 여러 메시지로 나눠 전송합니다. `--dry-run`은 인증 정보
+없이도 텍스트를 확인할 수 있습니다.
 
 ## 테스트와 린트
 
@@ -67,11 +77,13 @@ pytest -m integration
 2. **Add New Webhook to Workspace**에서 고정 채널을 선택합니다.
 3. GitHub 저장소의 **Settings → Secrets and variables → Actions**에서
    `SLACK_WEBHOOK_URL` 이름으로 Webhook URL을 등록합니다.
-4. 실패 알림을 사용하려면 별도 운영 채널의 Webhook URL을
+4. NAVER API HUB에서 발급한 값을 `NAVER_API_HUB_CLIENT_ID`와
+   `NAVER_API_HUB_CLIENT_SECRET` Secret으로 등록합니다.
+5. 실패 알림을 사용하려면 별도 운영 채널의 Webhook URL을
    `SLACK_ALERT_WEBHOOK_URL` 이름으로 등록합니다.
-5. 저장소의 **Actions** 탭에서 워크플로 실행을 허용합니다.
+6. 저장소의 **Actions** 탭에서 워크플로 실행을 허용합니다.
 
-`daily-menu.yml`은 월요일부터 금요일까지 `Asia/Seoul` 오전 10:00에 실행됩니다. 예약
+`daily-menu.yml`은 월요일부터 금요일까지 `Asia/Seoul` 오전 10:07에 실행됩니다. 예약
 워크플로는 default branch에 있는 최신 워크플로만 실행되므로 해당 파일을
 default branch에 반영해야 합니다. 수동 실행은 **Actions → Daily menu → Run
 workflow**에서 하며 기본값은 안전한 dry-run입니다. 성공한 예약 전송은

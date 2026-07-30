@@ -1,6 +1,10 @@
 from datetime import date
 
-from nanet_menu.formatter import format_failure_alert_payload, format_slack_payload
+from nanet_menu.formatter import (
+    format_failure_alert_payload,
+    format_slack_payload,
+    format_slack_payloads,
+)
 from nanet_menu.models import DailyMenu, MenuSection
 
 
@@ -12,7 +16,13 @@ def test_slack_message_format():
         "https://example.test/notice",
     )
 
-    payload = format_slack_payload(menu)
+    payload = format_slack_payload(
+        menu,
+        {
+            "김치찌개": "https://search.pstatic.net/kimchi.jpg",
+            "현미밥": "https://search.pstatic.net/rice.jpg",
+        },
+    )
 
     assert "🍽️ 7월 29일 수요일 국회도서관 식단" in payload["text"]
     assert "- 김치찌개\n- 현미밥" in payload["text"]
@@ -39,21 +49,25 @@ def test_slack_message_format():
                         }
                     ],
                 },
-                {
-                    "type": "rich_text_list",
-                    "style": "bullet",
-                    "elements": [
-                        {
-                            "type": "rich_text_section",
-                            "elements": [{"type": "text", "text": "김치찌개"}],
-                        },
-                        {
-                            "type": "rich_text_section",
-                            "elements": [{"type": "text", "text": "현미밥"}],
-                        },
-                    ],
-                },
             ],
+        },
+        {
+            "type": "section",
+            "text": {"type": "plain_text", "text": "• 김치찌개", "emoji": True},
+            "accessory": {
+                "type": "image",
+                "image_url": "https://search.pstatic.net/kimchi.jpg",
+                "alt_text": "김치찌개 이미지",
+            },
+        },
+        {
+            "type": "section",
+            "text": {"type": "plain_text", "text": "• 현미밥", "emoji": True},
+            "accessory": {
+                "type": "image",
+                "image_url": "https://search.pstatic.net/rice.jpg",
+                "alt_text": "현미밥 이미지",
+            },
         },
         {
             "type": "context",
@@ -129,22 +143,24 @@ def test_external_menu_text_is_not_interpreted_as_slack_markup():
                         "style": {"bold": True},
                     }
                 ],
-            },
-            {
-                "type": "rich_text_list",
-                "style": "bullet",
-                "elements": [
-                    {
-                        "type": "rich_text_section",
-                        "elements": [{"type": "text", "text": "<!here> & 생선"}],
-                    },
-                    {
-                        "type": "rich_text_section",
-                        "elements": [{"type": "text", "text": "`특식` ~한정~"}],
-                    },
-                ],
-            },
+            }
         ],
+    }
+    assert payload["blocks"][2] == {
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": "• <!here> & 생선",
+            "emoji": True,
+        },
+    }
+    assert payload["blocks"][3] == {
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": "• `특식` ~한정~",
+            "emoji": True,
+        },
     }
 
 
@@ -164,3 +180,23 @@ def test_failure_alert_is_plain_text_and_links_to_the_workflow_run():
             "text": "PDF에서 <!here> *식단*을 찾지 못했습니다.",
         },
     }
+
+
+def test_large_menu_is_split_without_cutting_sections():
+    menu = DailyMenu(
+        date(2026, 7, 29),
+        tuple(
+            MenuSection(f"{index}식당", "중식", tuple(f"{index}-{item}" for item in range(8)))
+            for index in range(1, 9)
+        ),
+        "주간식단표",
+        "https://example.test/notice",
+    )
+
+    payloads = format_slack_payloads(menu)
+
+    assert len(payloads) == 2
+    assert all(len(payload["blocks"]) <= 50 for payload in payloads)
+    for index in range(1, 9):
+        section_heading = f"{index}식당 · 중식"
+        assert sum(section_heading in payload["text"] for payload in payloads) == 1
