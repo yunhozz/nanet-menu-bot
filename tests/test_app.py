@@ -68,7 +68,7 @@ def test_large_menu_posts_each_split_payload(monkeypatch):
     assert posted == payloads
 
 
-def test_build_messages_excludes_dinner_from_output_and_image_search(monkeypatch):
+def test_build_messages_includes_only_lunch_in_output_and_image_search(monkeypatch):
     target = date(2026, 7, 29)
     notice = Notice("1", "1", "주간식단표", target, "https://example.test/notice")
     attachment = Attachment("menu.pdf", "menu.pdf", "https://example.test/menu.pdf")
@@ -99,6 +99,7 @@ def test_build_messages_excludes_dinner_from_output_and_image_search(monkeypatch
         app,
         "extract_menu",
         lambda pdf_bytes, date_: (
+            MenuSection("도서관식당", "조식", ("아침",)),
             MenuSection("도서관식당", "중식", ("점심",)),
             MenuSection("도서관식당", "석식", ("저녁",)),
         ),
@@ -108,6 +109,8 @@ def test_build_messages_excludes_dinner_from_output_and_image_search(monkeypatch
     payloads = app.build_messages(target, collector=Collector(), image_search=image_search)
 
     assert "도서관식당 · 중식" in payloads[0]["text"]
+    assert "조식" not in payloads[0]["text"]
+    assert "아침" not in payloads[0]["text"]
     assert "석식" not in payloads[0]["text"]
     assert "저녁" not in payloads[0]["text"]
     assert image_search.queries == ["점심"]
