@@ -31,9 +31,7 @@ def build_messages(
             pdf_bytes = client.download_pdf(attachment, notice.detail_url)
             LOGGER.info("PDF 파싱")
             sections = tuple(
-                section
-                for section in extract_menu(pdf_bytes, target)
-                if section.meal == "중식"
+                section for section in extract_menu(pdf_bytes, target) if section.meal == "중식"
             )
             LOGGER.info("오늘 식단 선택: %s (%d개 구분)", target.isoformat(), len(sections))
             menu = DailyMenu(target, sections, notice.title, notice.detail_url)
