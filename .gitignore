@@ -1,5 +1,6 @@
 .idea/
 .venv/
+venv/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
@@ -8,3 +9,7 @@ __pycache__/
 dist/
 build/
 diagnostics/
+.firebase/
+.firebaserc
+firebase-debug.log
+.secret.local

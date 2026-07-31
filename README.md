@@ -71,29 +71,43 @@ pytest
 pytest -m integration
 ```
 
-## Slack과 GitHub 설정
+## Slack과 Firebase 설정
 
 1. Slack에서 앱을 만들고 **Incoming Webhooks**를 활성화합니다.
 2. **Add New Webhook to Workspace**에서 고정 채널을 선택합니다.
-3. GitHub 저장소의 **Settings → Secrets and variables → Actions**에서
-   `SLACK_WEBHOOK_URL` 이름으로 Webhook URL을 등록합니다.
-4. NAVER API HUB에서 발급한 값을 `NAVER_API_HUB_CLIENT_ID`와
-   `NAVER_API_HUB_CLIENT_SECRET` Secret으로 등록합니다.
-5. 실패 알림을 사용하려면 별도 운영 채널의 Webhook URL을
-   `SLACK_ALERT_WEBHOOK_URL` 이름으로 등록합니다.
-6. 저장소의 **Actions** 탭에서 워크플로 실행을 허용합니다.
+3. Firebase 프로젝트를 Blaze 요금제로 전환하고 Firebase CLI로 로그인합니다.
+4. 프로젝트 루트에서 사용할 프로젝트를 선택합니다.
 
-`daily-menu.yml`은 월요일부터 금요일까지 `Asia/Seoul` 오전 10:07에 실행됩니다. 예약
-워크플로는 default branch에 있는 최신 워크플로만 실행되므로 해당 파일을
-default branch에 반영해야 합니다. 수동 실행은 **Actions → Daily menu → Run
-workflow**에서 하며 기본값은 안전한 dry-run입니다. 성공한 예약 전송은
-날짜별 Actions 캐시에 기록되어 같은 날짜의 예약 워크플로를 재실행해도
-중복 전송하지 않습니다. 명시적인 수동 실전송은 이 중복 방지를 적용하지
-않습니다.
+   ```bash
+   firebase use --add
+   ```
+
+5. Firebase Secret Manager에 아래 세 값을 등록합니다.
+
+   ```bash
+   firebase functions:secrets:set SLACK_WEBHOOK_URL
+   firebase functions:secrets:set NAVER_API_HUB_CLIENT_ID
+   firebase functions:secrets:set NAVER_API_HUB_CLIENT_SECRET
+   ```
+
+6. 예약 함수를 배포합니다.
+
+   ```bash
+   firebase deploy --only functions:post_daily_menu
+   ```
+
+`post_daily_menu` 함수는 월요일부터 금요일까지 `Asia/Seoul` 오전 10:00 정각에
+서울 리전(`asia-northeast3`)에서 실행됩니다. 예약 함수에는 세 Secret이
+런타임 환경변수로만 연결됩니다.
+
+GitHub의 `daily-menu.yml`은 중복 예약 전송을 막기 위해 예약 트리거 없이 수동
+dry-run/긴급 전송 수단으로만 남겨 둡니다. 사용하려면 GitHub 저장소에도 같은
+이름의 Actions Secret을 등록하고 **Actions → Daily menu → Run workflow**에서
+실행합니다. 기본값은 안전한 dry-run입니다.
 
 ## 장애 확인과 PDF 변경 대응
 
-Actions 실행 로그에서 `목록 수집`, `게시물 선택`, `PDF 다운로드`, `PDF
+Cloud Logging 또는 수동 Actions 실행 로그에서 `목록 수집`, `게시물 선택`, `PDF 다운로드`, `PDF
 파싱`, `오늘 식단 선택`, `Slack 전송` 중 실패한 단계를 확인합니다.
 Webhook URL이나 전체 HTTP 헤더는 로그에 남지 않습니다.
 

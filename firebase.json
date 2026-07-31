@@ -1,0 +1,24 @@
+{
+  "functions": [
+    {
+      "source": ".",
+      "codebase": "default",
+      "runtime": "python312",
+      "ignore": [
+        ".git",
+        ".github",
+        ".idea",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        "venv",
+        "diagnostics",
+        "dist",
+        "build",
+        "tests",
+        "**/__pycache__",
+        "**/*.pyc"
+      ]
+    }
+  ]
+}

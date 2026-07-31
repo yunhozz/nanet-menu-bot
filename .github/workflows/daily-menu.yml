@@ -1,9 +1,6 @@
 name: Daily menu
 
 on:
-  schedule:
-    - cron: "7 10 * * 1-5"
-      timezone: "Asia/Seoul"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -29,36 +26,11 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install .
-      - name: Resolve delivery date
-        id: delivery-date
-        if: github.event_name == 'schedule'
-        run: echo "date=$(TZ=Asia/Seoul date +%F)" >> "$GITHUB_OUTPUT"
-      - name: Restore delivery state
-        id: delivery-state
-        if: github.event_name == 'schedule'
-        uses: actions/cache@v5
-        with:
-          path: .delivery-state
-          key: nanet-menu-delivered-${{ steps.delivery-date.outputs.date }}
-      - name: Scheduled Slack post
-        if: github.event_name == 'schedule' && steps.delivery-state.outputs.cache-hit != 'true'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
-          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
-          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
-        run: python -m nanet_menu
-      - name: Mark scheduled delivery complete
-        if: github.event_name == 'schedule' && steps.delivery-state.outputs.cache-hit != 'true'
-        run: mkdir -p .delivery-state && touch ".delivery-state/${{ steps.delivery-date.outputs.date }}"
-      - name: Skip duplicate scheduled delivery
-        if: github.event_name == 'schedule' && steps.delivery-state.outputs.cache-hit == 'true'
-        run: echo "Menu for ${{ steps.delivery-date.outputs.date }} was already delivered."
       - name: Manual dry-run
-        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        if: inputs.dry_run
         run: python -m nanet_menu --dry-run
       - name: Manual Slack post
-        if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+        if: ${{ !inputs.dry_run }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
