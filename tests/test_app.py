@@ -16,13 +16,20 @@ def test_dry_run_does_not_call_slack(monkeypatch, capsys):
     def fail_if_called(*args, **kwargs):
         pytest.fail("Slack must not be called in dry-run mode")
 
-    monkeypatch.setattr(app, "post_to_slack", fail_if_called)
+    monkeypatch.setattr(app, "post_and_pin_to_slack", fail_if_called)
 
     assert app.run(date(2026, 7, 29), dry_run=True) == "menu message"
     assert capsys.readouterr().out == "menu message\n"
 
 
-def test_send_requires_webhook_environment(monkeypatch):
+@pytest.mark.parametrize(
+    ("missing_name", "message"),
+    [
+        ("SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN"),
+        ("SLACK_CHANNEL_ID", "SLACK_CHANNEL_ID"),
+    ],
+)
+def test_send_requires_slack_api_environment(monkeypatch, missing_name, message):
     monkeypatch.setattr(
         app,
         "build_messages",
@@ -34,11 +41,13 @@ def test_send_requires_webhook_environment(monkeypatch):
             }
         ],
     )
-    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test-token")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "C0123456789")
+    monkeypatch.delenv(missing_name, raising=False)
     monkeypatch.setenv("NAVER_API_HUB_CLIENT_ID", "client-id")
     monkeypatch.setenv("NAVER_API_HUB_CLIENT_SECRET", "client-secret")
 
-    with pytest.raises(NanetMenuError, match="SLACK_WEBHOOK_URL"):
+    with pytest.raises(NanetMenuError, match=message):
         app.run(date(2026, 7, 29), dry_run=False)
 
 
@@ -58,14 +67,22 @@ def test_large_menu_posts_each_split_payload(monkeypatch):
     monkeypatch.setattr(app, "build_messages", lambda target, image_search=None: payloads)
     monkeypatch.setenv("NAVER_API_HUB_CLIENT_ID", "client-id")
     monkeypatch.setenv("NAVER_API_HUB_CLIENT_SECRET", "client-secret")
-    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.test/services/test")
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test-token")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "C0123456789")
     posted = []
-    monkeypatch.setattr(app, "post_to_slack", lambda webhook_url, payload: posted.append(payload))
+    monkeypatch.setattr(
+        app,
+        "post_and_pin_to_slack",
+        lambda token, channel, payload: posted.append((token, channel, payload)),
+    )
 
     result = app.run(date(2026, 7, 29), dry_run=False)
 
     assert result == "menu 1/2\n\nmenu 2/2"
-    assert posted == payloads
+    assert posted == [
+        ("xoxb-test-token", "C0123456789", payloads[0]),
+        ("xoxb-test-token", "C0123456789", payloads[1]),
+    ]
 
 
 def test_build_messages_includes_only_museum_lunch_in_output_and_image_search(monkeypatch):

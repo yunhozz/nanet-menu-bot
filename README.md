@@ -1,7 +1,7 @@
 # nanet-menu
 
 국회도서관 공지사항의 최신 주간식단표 PDF에서 오늘 식단을 읽어 평일 아침
-Slack Incoming Webhook으로 전송하는 Python 3.12 프로젝트입니다.
+Slack에 전송하고 채널에 고정하는 Python 3.12 프로젝트입니다.
 
 ## 동작 방식
 
@@ -35,7 +35,8 @@ python -m nanet_menu --date 2026-07-29 --dry-run
 실제 전송에는 환경변수가 필요합니다.
 
 ```bash
-export SLACK_WEBHOOK_URL="<Slack Incoming Webhook URL>"
+export SLACK_BOT_TOKEN="<Slack Bot User OAuth Token>"
+export SLACK_CHANNEL_ID="<전송할 Slack 채널 ID>"
 export SLACK_ALERT_WEBHOOK_URL="<별도 운영 채널의 Incoming Webhook URL>"
 export NAVER_API_HUB_CLIENT_ID="<NAVER API HUB Client ID>"
 export NAVER_API_HUB_CLIENT_SECRET="<NAVER API HUB Client Secret>"
@@ -73,8 +74,9 @@ pytest -m integration
 
 ## Slack과 Firebase 설정
 
-1. Slack에서 앱을 만들고 **Incoming Webhooks**를 활성화합니다.
-2. **Add New Webhook to Workspace**에서 고정 채널을 선택합니다.
+1. Slack에서 앱을 만들고 Bot Token Scope에 `chat:write`, `pins:write`를 추가합니다.
+2. 앱을 워크스페이스에 설치해 Bot User OAuth Token을 발급받고, 전송할 채널에
+   앱을 초대합니다. 채널 ID는 Slack 채널 상세 화면에서 확인합니다.
 3. Firebase 프로젝트를 Blaze 요금제로 전환하고 Firebase CLI로 로그인합니다.
 4. 프로젝트 루트에서 사용할 프로젝트를 선택합니다.
 
@@ -82,10 +84,11 @@ pytest -m integration
    firebase use --add
    ```
 
-5. Firebase Secret Manager에 아래 세 값을 등록합니다.
+5. Firebase Secret Manager에 아래 네 값을 등록합니다.
 
    ```bash
-   firebase functions:secrets:set SLACK_WEBHOOK_URL
+   firebase functions:secrets:set SLACK_BOT_TOKEN
+   firebase functions:secrets:set SLACK_CHANNEL_ID
    firebase functions:secrets:set NAVER_API_HUB_CLIENT_ID
    firebase functions:secrets:set NAVER_API_HUB_CLIENT_SECRET
    ```

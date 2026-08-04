@@ -47,7 +47,8 @@ def _post_daily_menu(target: date | None = None) -> None:
     concurrency=1,
     retry_count=0,
     secrets=[
-        "SLACK_WEBHOOK_URL",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID",
         "NAVER_API_HUB_CLIENT_ID",
         "NAVER_API_HUB_CLIENT_SECRET",
     ],

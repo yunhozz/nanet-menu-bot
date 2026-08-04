@@ -9,7 +9,7 @@ from nanet_menu.formatter import SlackPayload, format_slack_payloads
 from nanet_menu.image_search import NaverImageSearch
 from nanet_menu.models import DailyMenu
 from nanet_menu.pdf_parser import extract_menu
-from nanet_menu.slack import post_to_slack
+from nanet_menu.slack import post_and_pin_to_slack
 
 LOGGER = logging.getLogger(__name__)
 
@@ -72,10 +72,13 @@ def run(target: date, *, dry_run: bool) -> str:
     if dry_run:
         print(text)
         return text
-    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
-    if not webhook_url:
-        raise NanetMenuError("Slack 전송 단계: SLACK_WEBHOOK_URL 환경변수가 없습니다.")
+    bot_token = os.environ.get("SLACK_BOT_TOKEN")
+    if not bot_token:
+        raise NanetMenuError("Slack 전송 단계: SLACK_BOT_TOKEN 환경변수가 없습니다.")
+    channel_id = os.environ.get("SLACK_CHANNEL_ID")
+    if not channel_id:
+        raise NanetMenuError("Slack 전송 단계: SLACK_CHANNEL_ID 환경변수가 없습니다.")
     LOGGER.info("Slack 전송")
     for payload in payloads:
-        post_to_slack(webhook_url, payload)
+        post_and_pin_to_slack(bot_token, channel_id, payload)
     return text
