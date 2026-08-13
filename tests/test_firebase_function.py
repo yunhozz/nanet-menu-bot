@@ -20,6 +20,18 @@ def test_scheduled_function_posts_for_given_date(monkeypatch):
     assert calls == [(target, False)]
 
 
+def test_scheduled_function_skips_holiday_without_failure_alert(monkeypatch):
+    target = date(2026, 1, 1)
+
+    def fail_if_called(*args, **kwargs):
+        pytest.fail("공휴일에는 메뉴 전송이나 실패 알림을 호출하면 안 됩니다.")
+
+    monkeypatch.setattr(firebase_function, "run", fail_if_called)
+    monkeypatch.setattr(firebase_function, "_post_failure_alert", fail_if_called)
+
+    firebase_function._post_daily_menu(target)
+
+
 def test_scheduled_function_reports_failure_and_reraises(monkeypatch):
     target = date(2026, 7, 31)
     error = MenuParseError("식단을 찾지 못했습니다.")

@@ -100,8 +100,9 @@ pytest -m integration
    ```
 
 `post_daily_menu` 함수는 월요일부터 금요일까지 `Asia/Seoul` 오전 10:00 정각에
-서울 리전(`asia-northeast3`)에서 실행됩니다. 예약 함수에는 세 Secret이
-런타임 환경변수로만 연결됩니다.
+서울 리전(`asia-northeast3`)에서 실행됩니다. 대한민국 공휴일과 대체공휴일에는
+메뉴 수집 및 Slack 전송을 건너뜁니다. 예약 함수에는 네 Secret이 런타임
+환경변수로만 연결됩니다.
 
 GitHub의 `daily-menu.yml`은 중복 예약 전송을 막기 위해 예약 트리거 없이 수동
 dry-run/긴급 전송 수단으로만 남겨 둡니다. 사용하려면 GitHub 저장소에도 같은

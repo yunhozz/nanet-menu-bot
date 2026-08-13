@@ -3,6 +3,7 @@ import os
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+import holidays
 from firebase_functions import scheduler_fn
 from firebase_functions.options import Timezone
 
@@ -13,6 +14,7 @@ from nanet_menu.slack import post_to_slack
 
 LOGGER = logging.getLogger(__name__)
 SEOUL = ZoneInfo("Asia/Seoul")
+KOREAN_HOLIDAYS = holidays.KR()
 
 
 def _post_failure_alert(target: date, error: NanetMenuError) -> None:
@@ -30,6 +32,14 @@ def _post_failure_alert(target: date, error: NanetMenuError) -> None:
 
 def _post_daily_menu(target: date | None = None) -> None:
     delivery_date = target or datetime.now(SEOUL).date()
+    holiday_name = KOREAN_HOLIDAYS.get(delivery_date)
+    if holiday_name:
+        LOGGER.info(
+            "공휴일이므로 메뉴 알림을 건너뜁니다: %s (%s)",
+            delivery_date.isoformat(),
+            holiday_name,
+        )
+        return
     try:
         run(delivery_date, dry_run=False)
     except NanetMenuError as error:
