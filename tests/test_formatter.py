@@ -81,6 +81,21 @@ def test_slack_message_format():
     ]
 
 
+def test_slack_message_includes_section_calories():
+    menu = DailyMenu(
+        date(2026, 7, 29),
+        (MenuSection("구내식당", "중식", ("김치찌개", "현미밥"), (1278, 1102)),),
+        "주간식단표",
+        "https://example.test/notice",
+    )
+
+    payload = format_slack_payload(menu)
+
+    heading = "구내식당 · 중식 · 1,278 / 1,102 kcal"
+    assert heading in payload["text"]
+    assert payload["blocks"][1]["elements"][0]["elements"][0]["text"] == heading
+
+
 def test_priority_sections_come_first_without_reordering_the_rest():
     menu = DailyMenu(
         date(2026, 7, 29),

@@ -23,6 +23,7 @@ class MenuSection:
     restaurant: str
     meal: str
     items: tuple[str, ...]
+    calories: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

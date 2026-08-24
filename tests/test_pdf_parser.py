@@ -25,6 +25,21 @@ def test_extracts_date_column_and_meals_from_minimal_table():
     )
 
 
+def test_extracts_calories_including_spaced_pdf_text():
+    table = [
+        ["", "구내식당", "선택식당"],
+        ["7.29\n(수)", "김치찌개\n현미밥\n1,278kcal", "비빔밥\n975 kc a"],
+        ["7.30\n(목)", "국수", "돈가스"],
+    ]
+
+    sections = extract_menu_from_tables([table], date(2026, 7, 29))
+
+    assert sections == (
+        MenuSection("구내식당", "중식", ("김치찌개", "현미밥"), (1278,)),
+        MenuSection("선택식당", "중식", ("비빔밥",), (975,)),
+    )
+
+
 def test_missing_date_returns_no_sections():
     table = [["", "구내식당"], ["7.28\n(화)", "비빔밥"]]
 

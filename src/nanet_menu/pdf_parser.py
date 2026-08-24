@@ -10,6 +10,10 @@ from nanet_menu.errors import MenuParseError
 from nanet_menu.models import MenuSection
 
 _DAY_RE = re.compile(r"(?:(?P<month>\d{1,2})\s*[./월]\s*)?(?P<day>\d{1,2})\s*(?:[일.]|\()")
+_CALORIE_RE = re.compile(
+    r"(?<!\d)(\d(?:[\s,]*\d){2,3})\s*k\s*c\s*a(?:\s*l)?",
+    re.IGNORECASE,
+)
 _MEALS = ("조식", "중식", "석식")
 _EXCLUDED = ("원산지", "알레르기", "열량", "kcal", "Kcal")
 
@@ -172,7 +176,15 @@ def _append_section(
 ) -> None:
     items = tuple(item for value in values for item in _split_items(value) if _is_menu_item(item))
     if items:
-        sections.append(MenuSection(restaurant, meal, items))
+        sections.append(MenuSection(restaurant, meal, items, _extract_calories(values)))
+
+
+def _extract_calories(values: Sequence[str]) -> tuple[int, ...]:
+    return tuple(
+        int(match.group(1).replace(",", "").replace(" ", ""))
+        for value in values
+        for match in _CALORIE_RE.finditer(value)
+    )
 
 
 def _split_items(value: str) -> list[str]:
@@ -197,6 +209,8 @@ def _normalize_cell(value: str) -> str:
 
 def _is_menu_item(value: str) -> bool:
     if len(value) < 2 or any(marker.lower() in value.lower() for marker in _EXCLUDED):
+        return False
+    if _CALORIE_RE.fullmatch(value):
         return False
     if "영업을하지않습니다" in value.replace(" ", ""):
         return False

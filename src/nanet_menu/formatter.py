@@ -71,8 +71,12 @@ def format_slack_payloads(
     )
     section_groups: list[tuple[list[str], list[dict[str, object]]]] = []
     for section in sections:
+        heading = f"{section.restaurant} · {section.meal}"
+        if section.calories:
+            calories = " / ".join(f"{value:,}" for value in section.calories)
+            heading = f"{heading} · {calories} kcal"
         lines = [
-            f"{section.restaurant} · {section.meal}",
+            heading,
             *(f"- {item}" for item in section.items),
         ]
         blocks: list[dict[str, object]] = [
@@ -84,7 +88,7 @@ def format_slack_payloads(
                         "elements": [
                             {
                                 "type": "text",
-                                "text": f"{section.restaurant} · {section.meal}",
+                                "text": heading,
                                 "style": {"bold": True},
                             }
                         ],
