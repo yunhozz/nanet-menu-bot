@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+import requests
 import responses
 
 from nanet_menu.collector import NanetCollector, parse_detail_attachment, parse_notice_list
@@ -39,3 +40,49 @@ def test_download_rejects_html():
 
     with pytest.raises(CollectionError, match="PDF 응답 검증 실패"):
         NanetCollector().download_pdf(attachment, "https://example.test/detail")
+
+
+@responses.activate
+def test_get_retries_connection_failures_and_then_succeeds(monkeypatch):
+    url = "https://example.test/notices"
+    responses.get(url, body=requests.ConnectTimeout("timed out"))
+    responses.get(url, body=requests.ConnectTimeout("timed out"))
+    responses.get(url, body="ok", status=200)
+    sleeps = []
+    monkeypatch.setattr("nanet_menu.collector.time.sleep", sleeps.append)
+
+    response = NanetCollector()._get(url)
+
+    assert response.text == "ok"
+    assert len(responses.calls) == 3
+    assert sleeps == [1.0, 2.0]
+
+
+@responses.activate
+def test_get_does_not_retry_non_retryable_http_error(monkeypatch):
+    url = "https://example.test/notices"
+    responses.get(url, status=404)
+    sleeps = []
+    monkeypatch.setattr("nanet_menu.collector.time.sleep", sleeps.append)
+
+    with pytest.raises(CollectionError, match="HTTP 요청 실패"):
+        NanetCollector()._get(url)
+
+    assert len(responses.calls) == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("status", [429, 500])
+@responses.activate
+def test_get_retries_retryable_http_status(monkeypatch, status):
+    url = "https://example.test/notices"
+    responses.get(url, status=status)
+    responses.get(url, body="ok", status=200)
+    sleeps = []
+    monkeypatch.setattr("nanet_menu.collector.time.sleep", sleeps.append)
+
+    response = NanetCollector()._get(url)
+
+    assert response.text == "ok"
+    assert len(responses.calls) == 2
+    assert sleeps == [1.0]

@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from datetime import date
 from urllib.parse import urljoin
 
@@ -39,12 +40,28 @@ class NanetCollector:
 
     def _get(self, url: str, *, referer: str | None = None) -> requests.Response:
         headers = {"Referer": referer} if referer else None
-        try:
-            response = self.session.get(url, headers=headers, timeout=self.settings.timeout)
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise CollectionError(f"HTTP 요청 실패: {url}") from exc
-        return response
+        for attempt in range(1, 4):
+            try:
+                response = self.session.get(
+                    url,
+                    headers=headers,
+                    timeout=self.settings.timeout,
+                )
+                if (response.status_code == 429 or response.status_code >= 500) and attempt < 3:
+                    response.close()
+                    time.sleep(float(attempt))
+                    continue
+                response.raise_for_status()
+                return response
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                if attempt < 3:
+                    time.sleep(float(attempt))
+                    continue
+                raise CollectionError(f"HTTP 요청 실패: {url}") from exc
+            except requests.RequestException as exc:
+                raise CollectionError(f"HTTP 요청 실패: {url}") from exc
+
+        raise AssertionError("unreachable")
 
     def fetch_notices(self) -> list[Notice]:
         response = self._get(self.settings.list_url, referer=BASE_URL)
