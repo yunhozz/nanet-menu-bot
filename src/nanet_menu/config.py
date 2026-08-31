@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+RETRY_WORKFLOW_URL = "https://github.com/yunhozz/nanet-menu-bot/actions/workflows/daily-menu.yml"
+
 
 @dataclass(frozen=True)
 class Settings:

@@ -51,3 +51,23 @@ def test_scheduled_function_reports_failure_and_reraises(monkeypatch):
         firebase_function._post_daily_menu(target)
 
     assert alerts == [(target, error)]
+
+
+def test_failure_alert_posts_retry_button_to_menu_channel(monkeypatch):
+    target = date(2026, 7, 31)
+    error = MenuParseError("식단을 찾지 못했습니다.")
+    sent = []
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test-token")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "C0123456789")
+    monkeypatch.setattr(
+        firebase_function,
+        "post_message_to_slack",
+        lambda token, channel, payload: sent.append((token, channel, payload)),
+    )
+
+    firebase_function._post_failure_alert(target, error)
+
+    assert sent[0][0:2] == ("xoxb-test-token", "C0123456789")
+    button = sent[0][2]["blocks"][3]["elements"][0]
+    assert button["action_id"] == "retry_daily_menu"
+    assert button["url"].endswith("/actions/workflows/daily-menu.yml")

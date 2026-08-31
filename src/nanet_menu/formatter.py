@@ -23,6 +23,7 @@ def format_failure_alert_payload(
     target: date,
     error: str,
     run_url: str | None = None,
+    retry_url: str | None = None,
 ) -> SlackPayload:
     detail = error[:2800]
     lines = [f"🚨 {target} 국회도서관 식단 알림 실패", detail]
@@ -52,6 +53,39 @@ def format_failure_alert_payload(
                     }
                 ],
             }
+        )
+    if retry_url:
+        lines.append(f"재시도 화면(dry_run 해제): {retry_url}")
+        blocks.insert(
+            2,
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "식단 전송 재시도 화면 열기",
+                            "emoji": True,
+                        },
+                        "url": retry_url,
+                        "action_id": "retry_daily_menu",
+                        "style": "primary",
+                    }
+                ],
+            },
+        )
+        blocks.insert(
+            2,
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": "재시도 화면에서 `dry_run`을 해제하고 실행하세요.",
+                    }
+                ],
+            },
         )
     return {"text": "\n".join(lines), "mrkdwn": False, "blocks": blocks}
 

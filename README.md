@@ -43,9 +43,11 @@ export NAVER_API_HUB_CLIENT_SECRET="<NAVER API HUB Client Secret>"
 python -m nanet_menu
 ```
 
-`SLACK_ALERT_WEBHOOK_URL`은 선택 사항입니다. 설정하면 메뉴 수집·파싱 또는
-Slack 전송 실패 시 별도 운영 채널에 오류와 GitHub Actions 실행 링크를
-전송합니다. Webhook URL은 코드, 설정 파일, 로그에 저장하지 마십시오.
+`SLACK_ALERT_WEBHOOK_URL`은 CLI와 GitHub Actions에서 사용하는 선택 사항입니다.
+설정하면 수동 실행 실패 시 별도 운영 채널에도 오류를 전송합니다. Webhook
+URL은 코드, 설정 파일, 로그에 저장하지 마십시오. Firebase 예약 함수는 최종
+실패 시 식단 채널에 오류와 `Daily menu` 수동 재시도 화면 버튼을 전송합니다.
+버튼을 누른 뒤 `dry_run`을 해제해 실행해야 실제 Slack 전송이 수행됩니다.
 
 각 음식에는 NAVER API HUB 이미지 검색의 첫 번째 결과가 썸네일로 표시됩니다.
 NAVER Cloud Platform 콘솔에서 NAVER API HUB 애플리케이션을 등록한 뒤 Client

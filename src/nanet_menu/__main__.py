@@ -5,6 +5,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from nanet_menu.app import run
+from nanet_menu.config import RETRY_WORKFLOW_URL
 from nanet_menu.errors import NanetMenuError, SlackError
 from nanet_menu.formatter import format_failure_alert_payload
 from nanet_menu.slack import post_to_slack
@@ -30,7 +31,12 @@ def _post_failure_alert(target: date, error: NanetMenuError) -> None:
     webhook_url = os.environ.get("SLACK_ALERT_WEBHOOK_URL")
     if not webhook_url:
         return
-    payload = format_failure_alert_payload(target, str(error), _github_run_url())
+    payload = format_failure_alert_payload(
+        target,
+        str(error),
+        _github_run_url(),
+        RETRY_WORKFLOW_URL,
+    )
     try:
         post_to_slack(webhook_url, payload)
     except SlackError as alert_error:

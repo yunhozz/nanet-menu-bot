@@ -180,10 +180,12 @@ def test_external_menu_text_is_not_interpreted_as_slack_markup():
 
 
 def test_failure_alert_is_plain_text_and_links_to_the_workflow_run():
+    retry_url = "https://github.com/example/nanet-menu-bot/actions/workflows/daily-menu.yml"
     payload = format_failure_alert_payload(
         date(2026, 7, 29),
         "PDF에서 <!here> *식단*을 찾지 못했습니다.",
         "https://github.com/example/nanet-menu-bot/actions/runs/1234",
+        retry_url,
     )
 
     assert payload["mrkdwn"] is False
@@ -195,6 +197,32 @@ def test_failure_alert_is_plain_text_and_links_to_the_workflow_run():
             "text": "PDF에서 <!here> *식단*을 찾지 못했습니다.",
         },
     }
+    assert payload["blocks"][2] == {
+        "type": "context",
+        "elements": [
+            {
+                "type": "mrkdwn",
+                "text": "재시도 화면에서 `dry_run`을 해제하고 실행하세요.",
+            }
+        ],
+    }
+    assert payload["blocks"][3] == {
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "식단 전송 재시도 화면 열기",
+                    "emoji": True,
+                },
+                "url": retry_url,
+                "action_id": "retry_daily_menu",
+                "style": "primary",
+            }
+        ],
+    }
+    assert f"재시도 화면(dry_run 해제): {retry_url}" in payload["text"]
 
 
 def test_large_menu_is_split_without_cutting_sections():

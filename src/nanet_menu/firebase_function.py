@@ -8,9 +8,10 @@ from firebase_functions import scheduler_fn
 from firebase_functions.options import Timezone
 
 from nanet_menu.app import run
+from nanet_menu.config import RETRY_WORKFLOW_URL
 from nanet_menu.errors import NanetMenuError, SlackError
 from nanet_menu.formatter import format_failure_alert_payload
-from nanet_menu.slack import post_to_slack
+from nanet_menu.slack import post_message_to_slack
 
 LOGGER = logging.getLogger(__name__)
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -18,13 +19,20 @@ KOREAN_HOLIDAYS = holidays.KR()
 
 
 def _post_failure_alert(target: date, error: NanetMenuError) -> None:
-    webhook_url = os.environ.get("SLACK_ALERT_WEBHOOK_URL")
-    if not webhook_url:
+    bot_token = os.environ.get("SLACK_BOT_TOKEN")
+    channel_id = os.environ.get("SLACK_CHANNEL_ID")
+    if not bot_token or not channel_id:
+        LOGGER.error("Slack 실패 알림 전송 실패: Bot Token 또는 채널 ID가 없습니다.")
         return
     try:
-        post_to_slack(
-            webhook_url,
-            format_failure_alert_payload(target, str(error), source_url=None),
+        post_message_to_slack(
+            bot_token,
+            channel_id,
+            format_failure_alert_payload(
+                target,
+                str(error),
+                retry_url=RETRY_WORKFLOW_URL,
+            ),
         )
     except SlackError as alert_error:
         LOGGER.error("Slack 실패 알림 전송 실패: %s", alert_error)

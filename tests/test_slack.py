@@ -4,7 +4,7 @@ import pytest
 import responses
 
 from nanet_menu.errors import SlackError
-from nanet_menu.slack import post_and_pin_to_slack, post_to_slack
+from nanet_menu.slack import post_and_pin_to_slack, post_message_to_slack, post_to_slack
 
 WEBHOOK = "https://hooks.slack.test/services/SECRET/VALUE"
 BOT_TOKEN = "xoxb-test-token"
@@ -89,6 +89,22 @@ def test_post_and_pin_success():
     )
     assert responses.calls[1].request.body == (
         b'{"channel": "C0123456789", "timestamp": "1234567890.123456"}'
+    )
+
+
+@responses.activate
+def test_post_message_success_without_pin():
+    responses.post(
+        "https://slack.com/api/chat.postMessage",
+        json={"ok": True, "channel": CHANNEL_ID, "ts": "1234567890.123456"},
+        status=200,
+    )
+
+    post_message_to_slack(BOT_TOKEN, CHANNEL_ID, PAYLOAD)
+
+    assert len(responses.calls) == 1
+    assert responses.calls[0].request.body == (
+        b'{"channel": "C0123456789", "text": "hello", "mrkdwn": false, "blocks": []}'
     )
 
 
