@@ -9,7 +9,6 @@ from firebase_functions.options import Timezone
 
 from nanet_menu.app import run
 from nanet_menu.config import RETRY_WORKFLOW_URL
-from nanet_menu.errors import NanetMenuError, SlackError
 from nanet_menu.formatter import format_failure_alert_payload
 from nanet_menu.slack import post_message_to_slack
 
@@ -18,12 +17,13 @@ SEOUL = ZoneInfo("Asia/Seoul")
 KOREAN_HOLIDAYS = holidays.KR()
 
 
-def _post_failure_alert(target: date, error: NanetMenuError) -> None:
+def _post_failure_alert(target: date, error: Exception) -> None:
     bot_token = os.environ.get("SLACK_BOT_TOKEN")
     channel_id = os.environ.get("SLACK_CHANNEL_ID")
     if not bot_token or not channel_id:
         LOGGER.error("Slack 실패 알림 전송 실패: Bot Token 또는 채널 ID가 없습니다.")
         return
+    LOGGER.info("Slack 실패 알림 전송 시작")
     try:
         post_message_to_slack(
             bot_token,
@@ -34,8 +34,10 @@ def _post_failure_alert(target: date, error: NanetMenuError) -> None:
                 retry_url=RETRY_WORKFLOW_URL,
             ),
         )
-    except SlackError as alert_error:
-        LOGGER.error("Slack 실패 알림 전송 실패: %s", alert_error)
+    except Exception:
+        LOGGER.exception("Slack 실패 알림 전송 실패")
+        return
+    LOGGER.info("Slack 실패 알림 전송 완료")
 
 
 def _post_daily_menu(target: date | None = None) -> None:
@@ -50,8 +52,8 @@ def _post_daily_menu(target: date | None = None) -> None:
         return
     try:
         run(delivery_date, dry_run=False)
-    except NanetMenuError as error:
-        LOGGER.error("%s", error)
+    except Exception as error:
+        LOGGER.exception("식단 알림 실행 실패: %s", error)
         _post_failure_alert(delivery_date, error)
         raise
 

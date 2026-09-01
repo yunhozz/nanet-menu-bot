@@ -53,6 +53,27 @@ def test_scheduled_function_reports_failure_and_reraises(monkeypatch):
     assert alerts == [(target, error)]
 
 
+def test_scheduled_function_reports_unexpected_failure_and_reraises(monkeypatch):
+    target = date(2026, 7, 31)
+    error = RuntimeError("예상하지 못한 오류")
+    alerts = []
+    monkeypatch.setattr(
+        firebase_function,
+        "run",
+        lambda delivery_date, *, dry_run: (_ for _ in ()).throw(error),
+    )
+    monkeypatch.setattr(
+        firebase_function,
+        "_post_failure_alert",
+        lambda delivery_date, caught: alerts.append((delivery_date, caught)),
+    )
+
+    with pytest.raises(RuntimeError, match="예상하지 못한 오류"):
+        firebase_function._post_daily_menu(target)
+
+    assert alerts == [(target, error)]
+
+
 def test_failure_alert_posts_retry_button_to_menu_channel(monkeypatch):
     target = date(2026, 7, 31)
     error = MenuParseError("식단을 찾지 못했습니다.")
@@ -71,3 +92,23 @@ def test_failure_alert_posts_retry_button_to_menu_channel(monkeypatch):
     button = sent[0][2]["blocks"][3]["elements"][0]
     assert button["action_id"] == "retry_daily_menu"
     assert button["url"].endswith("/actions/workflows/daily-menu.yml")
+
+
+def test_failure_alert_error_does_not_replace_original_failure(monkeypatch):
+    target = date(2026, 7, 31)
+    original_error = RuntimeError("원래 오류")
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test-token")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "C0123456789")
+    monkeypatch.setattr(
+        firebase_function,
+        "run",
+        lambda delivery_date, *, dry_run: (_ for _ in ()).throw(original_error),
+    )
+    monkeypatch.setattr(
+        firebase_function,
+        "post_message_to_slack",
+        lambda *args: (_ for _ in ()).throw(RuntimeError("알림 생성 오류")),
+    )
+
+    with pytest.raises(RuntimeError, match="원래 오류"):
+        firebase_function._post_daily_menu(target)
