@@ -59,13 +59,40 @@ def test_get_retries_connection_failures_and_then_succeeds(monkeypatch):
 
 
 @responses.activate
+def test_get_recovers_on_fifth_connection_attempt(monkeypatch):
+    url = "https://example.test/notices"
+    for _ in range(4):
+        responses.get(url, body=requests.ConnectTimeout("timed out"))
+    responses.get(url, body="ok", status=200)
+    sleeps = []
+    monkeypatch.setattr("nanet_menu.collector.time.sleep", sleeps.append)
+
+    response = NanetCollector()._get(url)
+
+    assert response.text == "ok"
+    assert len(responses.calls) == 5
+    assert sleeps == [1.0, 2.0, 4.0, 8.0]
+
+
+@responses.activate
+def test_get_reports_final_connection_error_type(monkeypatch):
+    url = "https://example.test/notices"
+    for _ in range(5):
+        responses.get(url, body=requests.ConnectTimeout("timed out"))
+    monkeypatch.setattr("nanet_menu.collector.time.sleep", lambda _: None)
+
+    with pytest.raises(CollectionError, match="ConnectTimeout"):
+        NanetCollector()._get(url)
+
+
+@responses.activate
 def test_get_does_not_retry_non_retryable_http_error(monkeypatch):
     url = "https://example.test/notices"
     responses.get(url, status=404)
     sleeps = []
     monkeypatch.setattr("nanet_menu.collector.time.sleep", sleeps.append)
 
-    with pytest.raises(CollectionError, match="HTTP 요청 실패"):
+    with pytest.raises(CollectionError, match="HTTP 404"):
         NanetCollector()._get(url)
 
     assert len(responses.calls) == 1

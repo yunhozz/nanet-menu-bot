@@ -21,6 +21,7 @@ _VIEWER_RE = re.compile(
     r"\s*['\"](?P<sequence>\d+)['\"]",
     re.IGNORECASE,
 )
+_MAX_HTTP_ATTEMPTS = 5
 
 
 class NanetCollector:
@@ -40,26 +41,30 @@ class NanetCollector:
 
     def _get(self, url: str, *, referer: str | None = None) -> requests.Response:
         headers = {"Referer": referer} if referer else None
-        for attempt in range(1, 4):
+        for attempt in range(1, _MAX_HTTP_ATTEMPTS + 1):
             try:
                 response = self.session.get(
                     url,
                     headers=headers,
                     timeout=self.settings.timeout,
                 )
-                if (response.status_code == 429 or response.status_code >= 500) and attempt < 3:
+                if (
+                    response.status_code == 429 or response.status_code >= 500
+                ) and attempt < _MAX_HTTP_ATTEMPTS:
                     response.close()
-                    time.sleep(float(attempt))
+                    time.sleep(float(2 ** (attempt - 1)))
                     continue
                 response.raise_for_status()
                 return response
             except (requests.Timeout, requests.ConnectionError) as exc:
-                if attempt < 3:
-                    time.sleep(float(attempt))
+                if attempt < _MAX_HTTP_ATTEMPTS:
+                    time.sleep(float(2 ** (attempt - 1)))
                     continue
-                raise CollectionError(f"HTTP 요청 실패: {url}") from exc
+                error_type = type(exc).__name__
+                raise CollectionError(f"HTTP 요청 실패({error_type}): {url}") from exc
             except requests.RequestException as exc:
-                raise CollectionError(f"HTTP 요청 실패: {url}") from exc
+                status = exc.response.status_code if exc.response is not None else "알 수 없음"
+                raise CollectionError(f"HTTP 요청 실패(HTTP {status}): {url}") from exc
 
         raise AssertionError("unreachable")
 
