@@ -50,10 +50,10 @@ python -m nanet_menu
 전송합니다. GitHub Actions에서 실행한 경우에는 해당 실행 로그 링크도
 알림에 포함됩니다. Webhook URL은 코드, 설정 파일, 로그에 저장하지 마세요.
 
-Firebase 예약 함수가 실패하면 `SLACK_BOT_TOKEN`과 `SLACK_CHANNEL_ID`로
-식단 채널에 오류 알림과 수동 재시도 버튼을 게시합니다. 버튼을 눌러 연
-GitHub Actions 화면에서 `dry_run` 옵션을 해제해야 실제 Slack 게시가
-실행됩니다.
+Firebase 예약 함수가 실패하면 식단 채널에 오류 알림과 실패 날짜를 다시
+실행하는 Slack 버튼을 게시합니다. 버튼 요청은 서명과 채널을 확인하는 Firebase
+HTTPS 함수로 전달되므로 GitHub Actions 워크플로 실행/쓰기 권한이 없는 채널
+구성원도 사용할 수 있습니다.
 
 각 메뉴 항목에는 NAVER API HUB 이미지 검색 결과 중 제목에 메뉴명이 포함된
 이미지의 썸네일을 표시합니다. 일치하는 결과가 없거나 검색에 실패하면 해당
@@ -94,16 +94,37 @@ pytest -m integration
    firebase use --add
    ```
 
-5. Firebase Secret Manager에 필요한 값을 등록합니다.
+5. Firebase Secret Manager에 필요한 값을 등록합니다. `SLACK_SIGNING_SECRET`은
+   Slack 앱의 **Basic Information → App Credentials → Signing Secret**입니다.
+   `GITHUB_ACTIONS_TOKEN`은 대상 저장소만 허용한 fine-grained personal access
+   token으로, **Actions: Read and write** 권한이 필요합니다.
 
    ```bash
    firebase functions:secrets:set SLACK_BOT_TOKEN
    firebase functions:secrets:set SLACK_CHANNEL_ID
    firebase functions:secrets:set NAVER_API_HUB_CLIENT_ID
    firebase functions:secrets:set NAVER_API_HUB_CLIENT_SECRET
+   firebase functions:secrets:set SLACK_SIGNING_SECRET
+   firebase functions:secrets:set GITHUB_ACTIONS_TOKEN
    ```
 
-6. 예약 함수를 배포합니다.
+6. `target_date` 입력을 포함한 `.github/workflows/daily-menu.yml` 변경을
+   저장소 기본 브랜치에 먼저 병합해 게시합니다.
+
+7. Slack 재시도 HTTPS 엔드포인트를 배포합니다.
+
+   ```bash
+   firebase deploy --only functions:retry_daily_menu
+   ```
+
+8. 저장소에는 Slack Socket Mode 클라이언트가 없으며 재시도 함수는 HTTPS 요청을
+   받습니다. Slack 앱에서 **Socket Mode**를 끄세요. Socket Mode가 켜져 있으면
+   **Request URL** 입력란이 표시되지 않습니다. 이후 **Interactivity & Shortcuts**를
+   켜고 **Request URL**에 배포 명령 출력에서 `retry_daily_menu` 함수의 HTTPS URL을
+   복사해 입력한 뒤 설정을 저장합니다.
+
+9. Request URL 설정을 저장한 다음에 예약 함수를 배포합니다. 그래야 새 실패
+   알림이 동작하는 재시도 엔드포인트를 가리킵니다.
 
    ```bash
    firebase deploy --only functions:post_daily_menu
@@ -112,6 +133,8 @@ pytest -m integration
 `post_daily_menu`는 서울 리전(`asia-northeast3`)에서 월요일부터 금요일까지
 오전 10시에 실행됩니다. 대한민국 공휴일과 대체공휴일에는 메뉴 수집과 Slack
 게시를 건너뜁니다. 네 개의 Secret은 함수의 런타임 환경변수로 연결됩니다.
+재시도 함수에는 Slack 서명·채널 검증, 원본 메시지 버튼 제거와 GitHub Actions
+dispatch에 필요한 네 Secret이 연결됩니다.
 
 ## GitHub Actions 수동 실행
 
@@ -124,6 +147,10 @@ pytest -m integration
 
 **Actions → Daily menu → Run workflow**에서 실행할 수 있습니다. 기본값은
 dry-run이며, 실제 게시가 필요할 때만 dry-run 옵션을 끄세요.
+재시도 버튼은 클릭한 날짜를 `target_date`로 전달하고 실제 Slack 게시를
+시작합니다. `GITHUB_ACTIONS_TOKEN`은 Firebase Secret Manager에만 등록하면
+됩니다. 거의 동시에 여러 번 누르거나 원본 버튼 제거에 실패하면 중복 실행될
+수 있습니다.
 
 ## 장애 확인과 PDF 변경 대응
 
