@@ -132,3 +132,23 @@ def post_message_to_slack(
         timeout,
         max_attempts,
     )
+
+
+def update_message_to_slack(
+    bot_token: str,
+    channel_id: str,
+    timestamp: str,
+    payload: dict[str, Any],
+    *,
+    session: requests.Session | None = None,
+    timeout: tuple[float, float] = (5.0, 15.0),
+    max_attempts: int = 3,
+) -> None:
+    _call_slack_api(
+        session or requests.Session(),
+        "chat.update",
+        bot_token,
+        {"channel": channel_id, "ts": timestamp, **payload},
+        timeout,
+        max_attempts,
+    )

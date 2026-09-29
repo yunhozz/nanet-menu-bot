@@ -8,6 +8,11 @@ on:
         required: true
         type: boolean
         default: true
+      target_date:
+        description: "처리할 날짜(YYYY-MM-DD, 비우면 오늘)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -28,7 +33,14 @@ jobs:
       - run: python -m pip install .
       - name: Manual dry-run
         if: inputs.dry_run
-        run: python -m nanet_menu --dry-run
+        env:
+          TARGET_DATE: ${{ inputs.target_date }}
+        run: |
+          if [ -n "$TARGET_DATE" ]; then
+            python -m nanet_menu --date "$TARGET_DATE" --dry-run
+          else
+            python -m nanet_menu --dry-run
+          fi
       - name: Manual Slack post
         if: ${{ !inputs.dry_run }}
         env:
@@ -37,4 +49,10 @@ jobs:
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
           NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
           NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
-        run: python -m nanet_menu
+          TARGET_DATE: ${{ inputs.target_date }}
+        run: |
+          if [ -n "$TARGET_DATE" ]; then
+            python -m nanet_menu --date "$TARGET_DATE"
+          else
+            python -m nanet_menu
+          fi

@@ -217,12 +217,38 @@ def test_failure_alert_is_plain_text_and_links_to_the_workflow_run():
                     "emoji": True,
                 },
                 "url": retry_url,
-                "action_id": "retry_daily_menu",
                 "style": "primary",
             }
         ],
     }
     assert f"재시도 화면(dry_run 해제): {retry_url}" in payload["text"]
+
+
+def test_failure_alert_can_offer_an_interactive_retry_for_its_date():
+    target = date(2026, 7, 29)
+
+    payload = format_failure_alert_payload(
+        target,
+        "식단 수집 실패",
+        retry_date=target,
+    )
+
+    button = payload["blocks"][3]["elements"][0]
+    assert "url" not in button
+    assert button["action_id"] == "retry_daily_menu"
+    assert button["value"] == target.isoformat()
+
+
+def test_failure_alert_link_button_is_not_an_interactive_retry():
+    payload = format_failure_alert_payload(
+        date(2026, 7, 29),
+        "식단 수집 실패",
+        retry_url="https://github.com/example/actions/workflows/daily-menu.yml",
+    )
+
+    button = payload["blocks"][3]["elements"][0]
+    assert button["url"].startswith("https://github.com/")
+    assert "action_id" not in button
 
 
 def test_large_menu_is_split_without_cutting_sections():
