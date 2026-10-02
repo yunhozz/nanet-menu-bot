@@ -38,7 +38,7 @@ def test_returns_first_matching_result_thumbnail():
 
 
 @responses.activate
-def test_returns_none_when_no_results_match():
+def test_returns_none_for_empty_results_and_first_image_when_no_titles_match():
     responses.get(SEARCH_URL, json={"items": []}, status=200)
     responses.get(
         SEARCH_URL,
@@ -54,7 +54,10 @@ def test_returns_none_when_no_results_match():
     )
 
     assert NaverImageSearch("client-id", "client-secret").first_image_url("없는 메뉴") is None
-    assert NaverImageSearch("client-id", "client-secret").first_image_url("김치찌개") is None
+    assert (
+        NaverImageSearch("client-id", "client-secret").first_image_url("김치찌개")
+        == "https://search.pstatic.net/wrong.jpg"
+    )
 
 
 @responses.activate

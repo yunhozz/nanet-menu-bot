@@ -19,6 +19,19 @@ def _normalize_match_text(value: str) -> str:
     return _NON_WORD_RE.sub("", text).casefold()
 
 
+def _valid_image_url(value: object) -> str | None:
+    if not isinstance(value, str) or any(character.isspace() for character in value):
+        return None
+    try:
+        parsed_url = urlparse(value)
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname:
+            return None
+        parsed_url.port  # Validate that a supplied port is numeric and in range.
+    except ValueError:
+        return None
+    return value
+
+
 class NaverImageSearch:
     def __init__(
         self,
@@ -34,6 +47,11 @@ class NaverImageSearch:
         self.timeout = timeout
 
     def first_image_url(self, menu_item: str) -> str | None:
+        normalized_menu_item = _normalize_match_text(menu_item)
+        if not normalized_menu_item:
+            LOGGER.info("메뉴명과 일치하는 이미지 검색 결과 없음: %s", menu_item)
+            return None
+
         try:
             response = self.session.get(
                 _SEARCH_URL,
@@ -54,29 +72,30 @@ class NaverImageSearch:
             LOGGER.info("이미지 검색 결과 없음: %s", menu_item)
             return None
 
-        normalized_menu_item = _normalize_match_text(menu_item)
-        if not normalized_menu_item:
-            LOGGER.info("메뉴명과 일치하는 이미지 검색 결과 없음: %s", menu_item)
-            return None
-
-        matched_title = False
+        fallback_image_url = None
         for item in items:
             if not isinstance(item, dict):
                 continue
             title = item.get("title")
-            if not isinstance(title, str):
-                continue
-            plain_title = html.unescape(_HTML_TAG_RE.sub("", title))
-            if normalized_menu_item not in _normalize_match_text(plain_title):
-                continue
-            matched_title = True
+            plain_title = html.unescape(_HTML_TAG_RE.sub("", title)) if isinstance(title, str) else ""
+            title_matches = (
+                isinstance(title, str)
+                and normalized_menu_item in _normalize_match_text(title)
+            )
 
-            image_url = item.get("thumbnail") or item.get("link")
-            if isinstance(image_url, str) and urlparse(image_url).scheme in {"http", "https"}:
+            image_url = _valid_image_url(item.get("thumbnail")) or _valid_image_url(item.get("link"))
+            if image_url is None:
+                continue
+
+            if title_matches:
                 LOGGER.info("이미지 검색 결과 선택(%s): %s", menu_item, plain_title)
                 return image_url
-            LOGGER.warning("이미지 검색 결과 URL이 올바르지 않음: %s", menu_item)
+            if fallback_image_url is None:
+                fallback_image_url = image_url
 
-        if not matched_title:
-            LOGGER.info("메뉴명과 일치하는 이미지 검색 결과 없음: %s", menu_item)
+        if fallback_image_url is not None:
+            LOGGER.info("제목 일치 결과가 없어 첫 유효 이미지 사용(%s)", menu_item)
+            return fallback_image_url
+
+        LOGGER.info("유효한 이미지 검색 결과 없음: %s", menu_item)
         return None
