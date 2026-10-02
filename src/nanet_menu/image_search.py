@@ -26,7 +26,7 @@ def _valid_image_url(value: object) -> str | None:
         parsed_url = urlparse(value)
         if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname:
             return None
-        parsed_url.port  # Validate that a supplied port is numeric and in range.
+        _ = parsed_url.port  # Validate that a supplied port is numeric and in range.
     except ValueError:
         return None
     return value
@@ -77,13 +77,16 @@ class NaverImageSearch:
             if not isinstance(item, dict):
                 continue
             title = item.get("title")
-            plain_title = html.unescape(_HTML_TAG_RE.sub("", title)) if isinstance(title, str) else ""
-            title_matches = (
-                isinstance(title, str)
-                and normalized_menu_item in _normalize_match_text(title)
+            plain_title = (
+                html.unescape(_HTML_TAG_RE.sub("", title)) if isinstance(title, str) else ""
             )
+            title_matches = isinstance(
+                title, str
+            ) and normalized_menu_item in _normalize_match_text(title)
 
-            image_url = _valid_image_url(item.get("thumbnail")) or _valid_image_url(item.get("link"))
+            image_url = _valid_image_url(item.get("thumbnail")) or _valid_image_url(
+                item.get("link")
+            )
             if image_url is None:
                 continue
 
