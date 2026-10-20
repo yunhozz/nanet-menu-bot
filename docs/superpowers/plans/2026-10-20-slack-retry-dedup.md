@@ -236,9 +236,11 @@ block_retryable(
       assert state["state"] == "queued"
       assert state["attempt_id"] == outbox["attempt_id"]
 
+
   def test_old_generation_cannot_claim_after_rotation():
       assert old_result.outcome == "stale"
       assert new_result.outcome == "claimed"
+
 
   def test_stale_owner_cannot_update_new_attempt():
       assert changed is False
@@ -392,9 +394,11 @@ _classify_dispatch(
       assert slack_calls == []
       assert github_calls == []
 
+
   def test_stale_click_does_not_create_outbox():
       assert response.status_code == 200
       assert new_outbox_count == 0
+
 
   def test_commit_result_unknown_never_dispatches_in_handler():
       assert response.status_code == 200
@@ -413,11 +417,14 @@ _classify_dispatch(
       assert worker_claim_count == 1
       assert github_post_count == 1
 
+
   def test_progress_update_precedes_dispatch():
       assert calls.index("slack_progress") < calls.index("github_dispatch")
 
+
   def test_progress_failure_prevents_dispatch():
       assert github_post_count == 0
+
 
   def test_dispatch_state_commit_failure_prevents_dispatch():
       assert github_post_count == 0
@@ -435,8 +442,10 @@ _classify_dispatch(
   def test_rejection_commits_generation_before_button_publish():
       assert calls.index("retryable_commit") < calls.index("slack_retry_button")
 
+
   def test_old_generation_is_invalid_after_restore():
       assert old_result.outcome == "stale"
+
 
   def test_failed_restore_does_not_block_new_attempt():
       assert new_attempt_state == "queued"
