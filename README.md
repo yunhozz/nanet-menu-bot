@@ -113,10 +113,11 @@ pytest -m integration
 6. `target_date` 입력을 포함한 `.github/workflows/daily-menu.yml` 변경을
    저장소 기본 브랜치에 먼저 병합해 게시합니다.
 
-7. Slack 재시도 HTTPS 엔드포인트를 배포합니다.
+7. 아래 Firestore·Eventarc 전제와 출시 검증을 충족한 뒤, Slack 재시도 HTTPS
+   엔드포인트와 outbox worker를 함께 배포합니다.
 
    ```bash
-   firebase deploy --only functions:retry_daily_menu
+   firebase deploy --only functions:retry_daily_menu,functions:process_retry_outbox
    ```
 
 8. 저장소에는 Slack Socket Mode 클라이언트가 없으며 재시도 함수는 HTTPS 요청을
@@ -135,8 +136,9 @@ pytest -m integration
 `post_daily_menu`는 서울 리전(`asia-northeast3`)에서 월요일부터 금요일까지
 오전 10시에 실행됩니다. 대한민국 공휴일과 대체공휴일에는 메뉴 수집과 Slack
 게시를 건너뜁니다. 네 개의 Secret은 함수의 런타임 환경변수로 연결됩니다.
-재시도 함수에는 Slack 서명·채널 검증, 원본 메시지 버튼 제거와 GitHub Actions
-dispatch에 필요한 네 Secret이 연결됩니다.
+HTTPS 재시도 함수에는 `SLACK_SIGNING_SECRET`, `SLACK_CHANNEL_ID`가 연결됩니다.
+`process_retry_outbox` worker에는 `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`,
+`GITHUB_ACTIONS_TOKEN`이 연결됩니다. worker도 서울 리전에서 실행됩니다.
 
 ## GitHub Actions 수동 실행
 
@@ -151,8 +153,81 @@ dispatch에 필요한 네 Secret이 연결됩니다.
 dry-run이며, 실제 게시가 필요할 때만 dry-run 옵션을 끄세요.
 재시도 버튼은 클릭한 날짜를 `target_date`로 전달하고 실제 Slack 게시를
 시작합니다. `GITHUB_ACTIONS_TOKEN`은 Firebase Secret Manager에만 등록하면
-됩니다. 거의 동시에 여러 번 누르거나 원본 버튼 제거에 실패하면 중복 실행될
-수 있습니다.
+됩니다. 같은 원본 메시지를 여러 명이 동시에 눌러도 원본 상태와 outbox를
+조건부 atomic commit으로 선점한 시도만 worker 처리 대상이 됩니다.
+
+## 재전송 실행과 공유 상태
+
+`retry_daily_menu`는 Slack 서명·5분 timestamp·채널·action·날짜·원본 메시지를
+검증한 뒤 Firestore에 원본 상태와 outbox를 함께 저장합니다. 유효한 요청은
+성공·중복·오래된 generation·저장 오류에서도 빈 본문의 HTTP 200 ACK를 반환합니다.
+ACK는 사용자에게 개별 안내를 보내는 메시지가 아니며, 처리 접수나 화면 갱신을
+보장하지 않습니다. ACK 경로에서 Slack·GitHub를 호출하거나 응답 후 background
+작업을 이어가지 않습니다. `response_url`도 사용하거나 저장하지 않습니다.
+
+`slack_retry_outbox/{attempt_id}` 생성 trigger가 원본과 outbox의 식별·날짜·세대를
+대조하고 worker 소유권을 한 번 선점합니다. 원본 Slack 메시지의 해당 재시도 버튼을
+없애고 **식단 재전송 중**이라는 비대화형 상태를 표시합니다. Slack Button에는
+`disabled` 속성이 없으므로 버튼 자체를 진행 문구로 대체합니다. 원래 실패 본문과
+관계없는 버튼은 보존합니다. 표시가 반영되기 전 잠시 버튼이 보여도 Firestore가
+같은 원본의 추가 시도를 막습니다.
+
+진행 표시와 `dispatching` 저장이 모두 성공한 뒤 GitHub POST를 한 번만 실행합니다.
+진행 표시·소유권·상태 저장이 실패하면 POST하지 않습니다. POST는 자동 재시도와
+redirect를 사용하지 않습니다. 접수가 확인되면 버튼 없는 접수 안내를 표시하고,
+결과 식단은 기존 GitHub Actions 실행이 새 메시지로 게시합니다. 표시·저장 장애나
+worker 중단 후에는 기존 소유권을 탈취하거나 이벤트 재전달로 다시 dispatch하지
+않습니다.
+
+GitHub `200`·`204`만 접수 확인입니다. 명확한 거절 allowlist는 현재 비어 있어,
+미검증 `2xx/3xx/4xx/5xx`와 timeout·transport 오류는 모두 `unknown`으로 남습니다.
+자동 버튼 복원 없이 관리자 확인이 필요하며, `403` 같은 응답도 코드만으로
+미접수라고 단정하지 않습니다. 확정 거절 복구 경로는 합성 분류 입력으로만
+검증했으며 실제 HTTP 거절 코드의 근거를 확보했다는 뜻이 아닙니다.
+
+향후 공식 근거로 확정 거절을 분류할 때는 새 generation을 `retryable`로 먼저
+저장한 뒤 새 버튼을 게시합니다. 게시 실패에서는 그 generation이 여전히 미선점일
+때만 `blocked`로 바꿉니다. 게시 timeout 중 새 클릭이 먼저 선점했다면 새 시도를
+보존합니다. Slack 게시와 차단 저장이 함께 실패하면 `retryable`이 남고 늦게 보인
+버튼이 한 번 선점될 수 있습니다. 두 시스템을 하나의 transaction으로 묶는 보장은
+없습니다.
+
+## 재전송 서비스 전제와 출시 확인
+
+프로젝트에는 Firestore Native `(default)` database와 Firestore API가 준비돼 있어야
+합니다. 원본 상태·outbox를 읽고 쓰는 실제 Functions runtime 서비스 계정에 필요한
+Firestore IAM(예: `roles/datastore.user`)과 연결된 Secret 접근 권한이 필요합니다.
+운영 client는 runtime의 명시적인 `GCLOUD_PROJECT` 또는 `GOOGLE_CLOUD_PROJECT`와
+ADC를 사용해 지연 초기화합니다. 모듈 import나 일반 CLI가 ADC를 조회하지 않으며,
+로컬 Emulator client는 검증된 loopback transport를 별도로 주입합니다.
+
+Firestore 생성 trigger를 전달할 Eventarc 및 관련 서비스가 준비돼야 합니다.
+실제 trigger·runtime principal을 기준으로 이벤트 수신과 대상 함수 호출 권한을
+확인하고, outbox가 해당 프로젝트·기본 database의 생성 이벤트로 전달되는지
+확인합니다. API 활성화·database 생성·IAM 변경·배포는 별도 운영 작업입니다.
+
+로컬 handler 측정 기준은 진입부터 응답 반환까지 2초이고, Firestore 의존 작업에는
+진입 시점부터 1.5초 예산을 적용합니다. SDK 초기화·인증·platform cold start 전체를
+강제 중단하는 보장은 없습니다. 실제 플랫폼 cold/warm ACK 3초 미만은 미검증
+출시 gate이며, 실제 환경에서 별도로 확인하기 전까지 출시를 보류합니다.
+
+## 잠금 상태와 수동 복구
+
+`channel_id + message_ts + action_id`의 alert key로 원본 상태와 연결된 attempt의
+outbox를 찾습니다. 사용자 ID는 키에 없고, 같은 날짜의 다른 원본 메시지는 독립적입니다.
+Cloud Logging의 단계 오류와 상태의 `created_at`·`updated_at`·응답 코드를 참고해
+GitHub Actions 실행의 날짜·시각과 대조합니다. 원본 payload·서명·token·response URL을
+로그나 복구 메모에 복사하지 않습니다.
+
+- `accepted`는 재요청하지 않고 해당 실행 결과와 Slack 표시만 확인합니다.
+- `unknown`, `dispatching`, `preparing`, 장기간 `queued`, `blocked`는 자동 해제하지
+  않습니다. GitHub 접수 여부와 worker 중단 지점을 확인하고 표시 장애를 구분합니다.
+- 미접수가 확인돼 수동 재개하기로 결정한 경우에도 현재 버전·소유권을 확인한
+  조건부 갱신으로 새 generation을 먼저 유효하게 만든 뒤 버튼을 게시해야 합니다.
+  기존 잠금 삭제, outbox 재생성·재전달, 이전 generation 재사용으로 우회하지 않습니다.
+
+자동 TTL·lease 만료·소유권 탈취는 없습니다. 수동 복구를 실행하는 API나 배포 작업도
+이 코드가 자동 수행하지 않습니다.
 
 ## 장애 확인과 PDF 변경 대응
 

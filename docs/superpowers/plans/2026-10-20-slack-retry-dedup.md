@@ -382,7 +382,7 @@ _classify_dispatch(
 
 ### 진행 단계
 
-- [ ] **T2.1 — ACK 계약의 실패 테스트를 작성한다.**
+- [x] **T2.1 — ACK 계약의 실패 테스트를 작성한다.**
 
   ```python
   def test_signed_request_enqueues_and_returns_empty_ack():
@@ -403,10 +403,10 @@ _classify_dispatch(
 
   기존 직접 dispatch 기대는 RED를 확인한 후 새 계약으로 대체한다. 서명·timestamp·channel·action·날짜 검증은 유지한다.
 
-- [ ] **T2.2 — RED 확인 후 handler를 구현한다.**
+- [x] **T2.2 — RED 확인 후 handler를 구현한다.**
   date-only와 새 generation을 지원한다. T1의 메시지 검증을 사용하고 식별자를 생성해 저장 함수를 호출한다. 유효한 요청은 성공·중복·오류에서도 예산 안에 빈 HTTP `200`을 반환한다. ACK를 개별 Slack 메시지로 취급하지 않는다.
 
-- [ ] **T2.3 — worker 중복과 순서의 실패 테스트를 작성한다.**
+- [x] **T2.3 — worker 중복과 순서의 실패 테스트를 작성한다.**
 
   ```python
   def test_duplicate_worker_delivery_dispatches_once():
@@ -423,13 +423,13 @@ _classify_dispatch(
       assert github_post_count == 0
   ```
 
-- [ ] **T2.4 — RED 확인 후 trigger와 worker를 구현한다.**
+- [x] **T2.4 — RED 확인 후 trigger와 worker를 구현한다.**
   `slack_retry_outbox/{attempt_id}`의 생성 event를 검증하고 worker를 원자 선점한다. 중복은 외부 작업 없이 종료한다. 진행 표시와 `dispatching` 저장 성공 후에만 POST한다. POST 자동 retry·redirect를 사용하지 않는다.
 
-- [ ] **T2.5 — 분류·최종 상태를 TDD로 구현한다.**
+- [x] **T2.5 — 분류·최종 상태를 TDD로 구현한다.**
   빈 allowlist를 기본값으로 `200/204` 외의 결과를 보수적으로 처리한다. `408`, 대표 `3xx/5xx`, 미검증 `4xx/2xx`, timeout·transport 오류를 포함한다. 접수 후 Firestore·Slack 실패에서 잠금을 유지하고 재dispatch하지 않는다.
 
-- [ ] **T2.6 — 복구 순서와 경쟁을 TDD로 구현한다.**
+- [x] **T2.6 — 복구 순서와 경쟁을 TDD로 구현한다.**
 
   ```python
   def test_rejection_commits_generation_before_button_publish():
@@ -445,10 +445,10 @@ _classify_dispatch(
 
   확정 거절 결과를 주입해 복구를 확인한다. 새 generation의 `retryable` commit 뒤 버튼을 게시한다. 게시 실패 시 같은 generation이 미선점인 경우만 조건부 차단한다. 두 시스템 장애로 `retryable`이 남는 승인된 한계도 재현한다.
 
-- [ ] **T2.7 — crash 경계를 확인한다.**
+- [x] **T2.7 — crash 경계를 확인한다.**
   worker 선점 후, Slack 진행 표시 후, `dispatching` 저장 후, GitHub 접수 후, generation 회전 후와 버튼 공개 후 중단을 주입한다. 재전달이 POST를 재실행하지 않는지 확인한다. 소유권 탈취·자동 만료를 추가하지 않는다.
 
-- [ ] **T2.8 — 로컬 handler 시간을 측정하고 보증 범위를 구분한다.**
+- [x] **T2.8 — 로컬 handler 시간을 측정하고 보증 범위를 구분한다.**
   handler 진입부터 HTTP 응답 반환까지 monotonic 시간으로 측정한다. 성공·중복·오래된 요청·저장 오류·commit 결과 불명 경로를 포함하고, 제어 가능한 RPC 지연·예산 소진과 worker 지연을 주입한다. worker 지연이 ACK 경로에 전파되지 않는지 확인한다.
 
   1.5초 의존 작업 예산에 따른 RPC timeout 배분과 추가 호출 제한을 확인한다. client 초기화·인증 등 직접 강제 중단할 수 없는 구간은 측정에 포함됐는지 명시하고, fake 지연이나 개별 timeout 합계를 실제 SDK 전체 시간의 보증으로 사용하지 않는다.
@@ -457,10 +457,10 @@ _classify_dispatch(
 
   실제 플랫폼 cold/warm ACK 3초 미만은 이번 배포 제외 범위에서 검증하지 않는다. 별도 허용된 출시 전 확인과 launch hold로 남긴다.
 
-- [ ] **T2.9 — 진입점과 함수별 Secret 연결을 완성한다.**
+- [x] **T2.9 — 진입점과 함수별 Secret 연결을 완성한다.**
   기존 루트 `main.py`의 import와 `__all__`에 `process_retry_outbox`를 추가한다. 기존 두 export를 유지한다. `firebase.json`의 source `.`·runtime `python312`는 변경하지 않는다. worker가 사용하는 Secrets를 연결하고 handler의 Secret 사용도 실제 역할에 맞춘다.
 
-- [ ] **T2.10 — README에 운영 전제와 제한을 기록한다.**
+- [x] **T2.10 — README에 운영 전제와 제한을 기록한다.**
   Firestore API·database·runtime IAM·ADC, trigger/Eventarc 전제를 설명한다. 설정·배포를 실행하지 않는다. ACK와 공유 메시지의 구분, 빈 거절 allowlist의 보수적 동작, 불명 시도·stale 버튼·수동 복구·자동 TTL 금지를 기록한다.
 
 ### 집중 확인과 수용 기준
@@ -493,6 +493,17 @@ python -m pytest tests/test_retry_store.py tests/test_retry_store_emulator.py te
 **수용·커밋:** Orchestrator가 필요한 QA와 지적 해결을 확인해 T2를 수용하고 하나의 focused commit으로 저장한다. SHA·포함 내용·HEAD·남은 변경을 확인한다.
 
 ## 최종 전체 검증
+
+### T2 QA 완료
+
+- 기본 전체 테스트: `.venv/bin/python -m pytest -q` — `181 passed, 6 deselected`.
+- Handler 집중 테스트: `.venv/bin/python -m pytest tests/test_firebase_function.py -q` — `101 passed, 1 deselected`.
+- 저장 계층·handler 계획 집중 테스트 — `134 passed, 5 skipped`; Ruff 변경 Python 파일 검사 통과.
+- Loopback Firestore Emulator 검증 — `5 passed, 101 deselected`. T1 최초 선점·worker·retryable barrier는 각각 20 요청 중 winner/owner 1개였고, 독립 timestamp 시나리오도 통과했다. Emulator contention에서 `DeadlineExceeded`가 다수 발생했고 일부 `FailedPrecondition`이 관측됐다. 이는 성공/중복으로 분류되지 않고 저장 오류로 fail-closed됐다. fixture 정리는 `verified_missing`으로 확인했다.
+- T2 outbox event를 20회 전달한 검증에서 GitHub POST 1회와 Slack 갱신 2회였다. 성공·중복·stale·저장 오류·commit 결과 불명 handler의 loopback 측정은 각각 0.011382초, 0.002924초, 0.002680초, 0.000414초, 0.005739초였다.
+- 로컬 ACK 측정 pytest — `6 passed`. 5개 경로를 각각 3회 측정하고 초기화·저장 지연을 각각 20ms 주입했을 때 최대 `0.050547s`; 의존 작업 예산 경계 주입 측정은 `1.455338s`로 로컬 handler 2초 기준 이내였다. 이 측정은 SDK 전체 deadline이나 실제 플랫폼 cold/warm 시간을 보증하지 않는다.
+- 소스·테스트 검토에서 서명된 interaction의 빈 HTTP 200 ACK와 ACK 이전 외부 호출 부재, worker 선점→공유 진행 표시→`dispatching` CAS→단일 POST 순서, 200/204만 접수 확인, 미검증 결과의 `unknown` 잠금 유지, 복구 generation 순서, export·Secret·`eventTrigger.retry=False`를 확인했다.
+- 실제 Firebase ADC, 운영 contention, Eventarc 전달, 실제 Slack/GitHub 및 플랫폼 cold/warm ACK 3초는 검증하지 않았다. 실제 플랫폼 ACK는 별도 출시 전 검증까지 launch hold다.
 
 T1·T2 수용과 필요한 QA 완료 후 Reviewer가 최종 전체 변경을 한 번 독립 검토한다. 원자성, owner/generation, ACK, event 중복, 응답 분류, 복구 순서, 진입점·의존성·Secrets와 문서 일치를 확인한다.
 
