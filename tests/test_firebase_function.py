@@ -906,7 +906,11 @@ def test_crash_boundary_redelivery_never_reposts(worker_case, monkeypatch, stage
 
 
 def test_entrypoint_exports_and_secrets_are_split_by_role():
-    import main
+    from pathlib import Path
+    from runpy import run_path
+    from types import SimpleNamespace
+
+    main = SimpleNamespace(**run_path(str(Path(__file__).resolve().parents[1] / "main.py")))
 
     assert set(main.__all__) == {"post_daily_menu", "retry_daily_menu", "process_retry_outbox"}
 
