@@ -166,3 +166,81 @@ Cloud Logging이나 수동 Actions 실행 로그에서 `목록 수집`, `게시�
 데이터를 `test_pdf_parser.py`에 추가해 문제를 재현한 뒤 `pdf_parser.py`를
 수정합니다. PDF가 이미지형으로 바뀐 사실을 확인하기 전에는 OCR을 추가하지
 않습니다.
+
+## 재전송 저장 계약과 격리 검증
+
+재전송 저장 계층은 `(default)` database의
+`slack_retry_requests/{alert_key}`와 `slack_retry_outbox/{attempt_id}`를 사용합니다.
+`alert_key`는 채널 ID·원본 timestamp 문자열·action ID를 고정 순서 JSON 배열로
+직렬화한 SHA-256입니다. 사용자와 날짜는 키에 넣지 않습니다. 최초 `initial` 또는
+현재 `retryable` generation만 원본 상태와 outbox를 한 atomic commit으로 생성하며,
+worker ID와 attempt ID가 일치하는 실행만 후속 상태를 갱신합니다.
+
+Firebase 실행·개발 의존성은 `google-cloud-firestore==2.28.0`으로 고정합니다.
+공개 generated `FirestoreClient`의 nontransactional `batch_get_documents`로 문서와
+`update_time`을 읽고 `commit`에 관찰 버전의 precondition을 전달합니다. 없는 원본과
+outbox는 `exists=false`, 기존 원본 변경은 `update_time` 일치를 요구합니다.
+원본 변경과 outbox 생성은 하나의 atomic commit에 포함됩니다. worker 선점·상태
+변경도 같은 버전 CAS를 사용하므로 관찰 이후 바뀐 상태를 덮어쓰지 못합니다.
+각 RPC는 `retry=None`과 monotonic 잔여 예산 이하의 timeout을 사용합니다.
+`exists=false` create precondition을 포함한 commit의 `AlreadyExists`만 확인된
+경쟁으로 처리합니다. update-only commit의 `AlreadyExists`와 모든 미확인
+`FailedPrecondition`은 저장 오류로 유지합니다. 현재 공개 구조화 오류 정보에서
+update_time 거절을 확인할 근거가 없어 영문 message 부분일치로 분류하지 않습니다.
+다른 오류·`ABORTED`·commit 응답 유실은 저장 오류로 처리하며 자동 재시도나
+보상 쓰기를 하지 않습니다. transaction을 시작하거나 rollback하지 않습니다.
+[공개 GAPIC API](https://cloud.google.com/python/docs/reference/firestore/latest/google.cloud.firestore_v1.services.firestore.FirestoreClient)
+계약을 사용하며 private SDK API에 의존하지 않습니다.
+
+Firestore 애플리케이션 예산은 1.5초입니다. 초기화·인증·callback 전체 시간을 SDK가
+강제 중단한다는 보장은 없습니다. 로컬 handler 2초 측정과 실제 플랫폼 cold/warm
+ACK 3초 미만의 출시 검증은 별도로 필요합니다. 운영 client는 Firebase runtime에서
+명시한 프로젝트와 ADC로 초기화해 `RetryStore`에 주입합니다. 모듈 import·일반 CLI·
+테스트 수집은 client나 ADC를 초기화하지 않습니다.
+
+저장 메시지는 기존 실패 알림의 `text`, `blocks`, 선택 `mrkdwn`만 허용하고,
+blocks 내부도 header/section/context/actions와 해당 텍스트·버튼 필드만 허용합니다.
+원본 interaction payload, `response_url`, token, 서명은 저장하지 않습니다.
+지원하지 않는 필드나 크기 초과 입력은 부분 저장하거나 잘라 저장하지 않습니다.
+
+크기 계산은 Firestore의 [저장 크기 산식](https://firebase.google.com/docs/firestore/storage-size)과
+[문서 한도 1 MiB](https://firebase.google.com/docs/firestore/quotas#collections_documents_and_fields)를
+사용합니다. 문자열은 UTF-8 bytes + 1, 정수·timestamp는 8 bytes, bool/null은 1 byte,
+array는 원소 합, map은 필드 이름·값 합 + 32 bytes입니다. 문서 이름은 collection과
+ID 문자열 크기 합 + 16 bytes입니다. attempt/generation은 ASCII 128자 이내,
+alert key는 64자, 날짜는 10자이므로 outbox 이름·메타데이터·`message` 필드 이름의
+최대 비용은 **624 bytes**입니다. 따라서 메시지 map의 허용 상한은
+**1,048,576 − 624 = 1,047,952 bytes**입니다. 최대 metadata envelope로 계산해
+실제 식별자 길이에 관계없이 안전한 경계를 사용합니다. 두 문서 commit은
+10 MiB 요청 한도보다 작으며 단일 문자열도 문서보다 작은 이 경계에 포함됩니다.
+한글 오류 2,800자를 포함한 기존 실패 알림의 측정값은 **17,670 bytes**입니다.
+JSON의 따옴표 escape는 저장 문자열의 추가 비용이 아니며 한글 한 글자는 UTF-8
+3 bytes로 계산합니다. 경계 직전·경계·초과와 한글·escape는 단위 테스트로 확인합니다.
+
+기본 pytest는 `integration`과 `firestore_emulator` marker를 제외합니다.
+Emulator 검증은 Orchestrator가 격리 lifecycle과 정리를 관리하는 환경에서 실행합니다.
+테스트는 `FIRESTORE_EMULATOR_HOST`가 없으면 client/ADC 생성 전에 skip합니다.
+설정값은 `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`만 허용하며,
+잘못된 값에서 원격 서비스로 fallback하지 않습니다. 공개 `FirestoreGrpcTransport`에
+명시적인 insecure loopback channel과 `AnonymousCredentials`를 전달하고,
+테스트 프로젝트는 `demo-slack-retry`로 고정합니다. 실제 Firebase·Slack·GitHub
+호출과 배포는 이 검증에 포함하지 않습니다.
+
+```bash
+python -m pytest tests/test_retry_store.py -q
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 python -m pytest tests/test_retry_store_emulator.py -m firestore_emulator -q -o addopts=''
+```
+
+Emulator 테스트는 매 실행 고유 ID의 문서만 만들고 fixture 종료 시 실제 생성된
+문서를 확인해 삭제하고, 시도한 모든 경로가 없는지 다시 확인합니다. 정리 전용
+`delete_document`의 잠금·timeout 오류는 대상·시각·횟수를 기록하고 최대 3회만
+재시도하며, 마지막 오류는 테스트 실패로 남깁니다. 이 정리 재시도는 제품 CAS에
+적용하지 않습니다. transport는 정리 실패 때도 종료합니다. Orchestrator는 테스트 후
+Emulator 프로세스와 임시 데이터를 정리합니다.
+미설정으로 인한 skip은 경쟁 검증 합격이 아닙니다. 20개 동시 클릭의 원본·outbox
+단일 선점과 worker 단일 소유권을 확인하지만 Emulator의 contention·지연 특성은
+운영 Firestore와 다르므로 운영 성능이나 실제 ACK 시간을 입증하지 않습니다.
+1.5초 예산 내 경쟁 요청 일부는 `DeadlineExceeded`로 끝날 수 있습니다. 이 경우는
+중복 거절로 바꾸지 않고 저장 오류로 유지하며, commit 여부를 추정하거나 후속
+외부 효과를 시작하지 않습니다. 경쟁 검사는 단일 선점·outbox·worker 소유권과
+독립 timestamp를 확인하고 성공·명확한 거절·저장 오류 수를 함께 출력합니다.
