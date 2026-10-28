@@ -82,7 +82,11 @@ def test_scheduled_function_reports_unexpected_failure_and_reraises(monkeypatch)
 
 def test_failure_alert_posts_retry_button_to_menu_channel(monkeypatch):
     target = date(2026, 7, 31)
-    error = MenuParseError("식단을 찾지 못했습니다.")
+    from nanet_menu.errors import DeliveryError, DeliveryFailure
+
+    error = DeliveryError(
+        "식단을 찾지 못했습니다.", failure=DeliveryFailure(stage="prepare", pre_send_confirmed=True)
+    )
     sent = []
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test-token")
     monkeypatch.setenv("SLACK_CHANNEL_ID", "C0123456789")
@@ -401,7 +405,7 @@ def worker_case(monkeypatch):
     key = alert_key(identity)
     message = dict(
         format_failure_alert_payload(
-            date(2026, 7, 31), "원래 식단 오류", retry_date=date(2026, 7, 31)
+            date(2026, 7, 31), "원래 식단 오류", retry_date=date(2026, 7, 31), retry_allowed=True
         )
     )
     unrelated = {
@@ -1217,3 +1221,48 @@ def test_loopback_handler_handoff_and_duplicate_events(monkeypatch):
             print({"T2_loopback_cleanup": "verified_missing", "paths": len(paths)})
         finally:
             client.transport.close()
+
+
+def test_unknown_failure_alert_has_no_retry_button(monkeypatch):
+    sent = []
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "token")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "channel")
+    monkeypatch.setattr(
+        firebase_function, "post_message_to_slack", lambda *args: sent.append(args[-1])
+    )
+    firebase_function._post_failure_alert(date(2026, 7, 31), MenuParseError("unknown"))
+    assert not any(block["type"] == "actions" for block in sent[0]["blocks"])
+
+
+def test_scheduled_endpoint_preserves_configuration():
+    endpoint = firebase_function.post_daily_menu.__firebase_endpoint__
+    assert (endpoint.minInstances, endpoint.maxInstances, endpoint.concurrency) == (1, 1, 1)
+    assert endpoint.timeoutSeconds == 300
+    assert endpoint.scheduleTrigger["schedule"] == "0 10 * * 1-5"
+    assert endpoint.scheduleTrigger["timeZone"] == "Asia/Seoul"
+    assert endpoint.scheduleTrigger["retryConfig"]["retryCount"] == 0
+
+
+def test_partial_delivery_alert_shows_progress_in_blocks(monkeypatch):
+    from nanet_menu.errors import DeliveryError, DeliveryFailure
+
+    sent = []
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "token")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "channel")
+    monkeypatch.setattr(
+        firebase_function, "post_message_to_slack", lambda *args: sent.append(args[-1])
+    )
+    failure = DeliveryFailure(
+        stage="post",
+        posted_count=1,
+        total_count=3,
+        payload_index=2,
+        message_timestamps=("123.456",),
+        outcome_unknown=True,
+    )
+    firebase_function._post_failure_alert(date(2026, 7, 31), DeliveryError("lost", failure=failure))
+    blocks = str(sent[0]["blocks"])
+    assert "1/3" in blocks
+    assert "2" in blocks and "123.456" in blocks
+    assert "불명" in blocks and "채널" in blocks and "로그" in blocks
+    assert not any(block["type"] == "actions" for block in sent[0]["blocks"])

@@ -55,7 +55,7 @@ def test_get_retries_connection_failures_and_then_succeeds(monkeypatch):
 
     assert response.text == "ok"
     assert len(responses.calls) == 3
-    assert sleeps == [1.0, 2.0]
+    assert sleeps == [5.0, 10.0]
 
 
 @responses.activate
@@ -71,7 +71,7 @@ def test_get_recovers_on_fifth_connection_attempt(monkeypatch):
 
     assert response.text == "ok"
     assert len(responses.calls) == 5
-    assert sleeps == [1.0, 2.0, 4.0, 8.0]
+    assert sleeps == [5.0, 10.0, 20.0, 30.0]
 
 
 @responses.activate
@@ -112,4 +112,83 @@ def test_get_retries_retryable_http_status(monkeypatch, status):
 
     assert response.text == "ok"
     assert len(responses.calls) == 2
-    assert sleeps == [1.0]
+    assert sleeps == [5.0]
+
+
+def test_collection_budget_is_shared_between_requests(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr("nanet_menu.collector.time.monotonic", lambda: clock[0])
+    collector = NanetCollector()
+    collector.ensure_budget()
+    clock[0] = 1000.0
+    monkeypatch.setattr(collector.session, "get", lambda *args, **kwargs: requests.Response())
+    collector.session.get = lambda *args, **kwargs: _ok_response()
+    collector._get("https://example.test/one")
+    clock[0] = 1180.0
+    with pytest.raises(CollectionError) as caught:
+        collector._get("https://example.test/two")
+    assert caught.value.failure.budget_exhausted
+
+
+def _ok_response():
+    response = requests.Response()
+    response.status_code = 200
+    return response
+
+
+def test_timeout_failure_preserves_attempt_details(monkeypatch):
+    collector = NanetCollector()
+    monkeypatch.setattr(
+        collector.session,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(requests.ConnectTimeout()),
+    )
+    monkeypatch.setattr("nanet_menu.collector.time.sleep", lambda _: None)
+    with pytest.raises(CollectionError) as caught:
+        collector._get("https://example.test")
+    assert caught.value.failure.exception_type == "ConnectTimeout"
+    assert caught.value.failure.attempts == 5
+
+
+def test_budget_limits_wait_and_prevents_another_get(monkeypatch):
+    clock = [0.0]
+    calls = []
+    delays = []
+    monkeypatch.setattr("nanet_menu.collector.time.monotonic", lambda: clock[0])
+
+    def sleep(seconds):
+        delays.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr("nanet_menu.collector.time.sleep", sleep)
+    collector = NanetCollector()
+
+    def get(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        clock[0] = 178.0
+        raise requests.ConnectTimeout()
+
+    monkeypatch.setattr(collector.session, "get", get)
+    with pytest.raises(CollectionError) as caught:
+        collector._get("https://example.test")
+    assert delays == [2.0]
+    assert calls == [(10.0, 30.0)]
+    assert caught.value.failure.attempts == 1
+    assert caught.value.failure.budget_exhausted
+
+
+def test_remaining_budget_caps_next_request_timeout(monkeypatch):
+    clock = [0.0]
+    calls = []
+    monkeypatch.setattr("nanet_menu.collector.time.monotonic", lambda: clock[0])
+    collector = NanetCollector()
+
+    def get(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        return _ok_response()
+
+    monkeypatch.setattr(collector.session, "get", get)
+    collector._get("https://example.test/one")
+    clock[0] = 175.0
+    collector._get("https://example.test/two")
+    assert calls == [(10.0, 30.0), (5.0, 5.0)]

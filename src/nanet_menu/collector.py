@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 from nanet_menu.config import Settings
 from nanet_menu.date_range import normalize_text
-from nanet_menu.errors import CollectionError
+from nanet_menu.errors import CollectionError, HttpFailure
 from nanet_menu.models import Attachment, Notice
 
 BASE_URL = "https://www.nanet.go.kr"
@@ -32,6 +32,8 @@ class NanetCollector:
     ) -> None:
         self.settings = settings or Settings()
         self.session = session or requests.Session()
+        self._started_at: float | None = None
+        self._last_failure: HttpFailure | None = None
         self.session.headers.update(
             {
                 "User-Agent": self.settings.user_agent,
@@ -39,33 +41,60 @@ class NanetCollector:
             }
         )
 
+    def ensure_budget(self) -> None:
+        if self._started_at is None:
+            return
+        elapsed = time.monotonic() - self._started_at
+        if elapsed >= self.settings.collection_budget:
+            previous = self._last_failure
+            failure = HttpFailure(
+                kind=previous.kind if previous else "budget",
+                exception_type=previous.exception_type if previous else None,
+                status=previous.status if previous else None,
+                attempts=previous.attempts if previous else 0,
+                elapsed=elapsed,
+                budget_exhausted=True,
+            )
+            raise CollectionError("수집 시간 예산 소진", failure=failure)
+
     def _get(self, url: str, *, referer: str | None = None) -> requests.Response:
         headers = {"Referer": referer} if referer else None
+        if self._started_at is None:
+            self._started_at = time.monotonic()
+        self._last_failure = None
         for attempt in range(1, _MAX_HTTP_ATTEMPTS + 1):
+            self.ensure_budget()
+            remaining = self.settings.collection_budget - (time.monotonic() - self._started_at)
+            timeout = tuple(min(value, remaining) for value in self.settings.timeout)
             try:
-                response = self.session.get(
-                    url,
-                    headers=headers,
-                    timeout=self.settings.timeout,
-                )
-                if (
-                    response.status_code == 429 or response.status_code >= 500
-                ) and attempt < _MAX_HTTP_ATTEMPTS:
-                    response.close()
-                    time.sleep(float(2 ** (attempt - 1)))
-                    continue
+                response = self.session.get(url, headers=headers, timeout=timeout)
+                if response.status_code == 429 or response.status_code >= 500:
+                    response.raise_for_status()
                 response.raise_for_status()
                 return response
-            except (requests.Timeout, requests.ConnectionError) as exc:
-                if attempt < _MAX_HTTP_ATTEMPTS:
-                    time.sleep(float(2 ** (attempt - 1)))
-                    continue
-                error_type = type(exc).__name__
-                raise CollectionError(f"HTTP 요청 실패({error_type}): {url}") from exc
             except requests.RequestException as exc:
-                status = exc.response.status_code if exc.response is not None else "알 수 없음"
-                raise CollectionError(f"HTTP 요청 실패(HTTP {status}): {url}") from exc
-
+                status = exc.response.status_code if exc.response is not None else None
+                retryable = isinstance(exc, (requests.Timeout, requests.ConnectionError)) or (
+                    status == 429 or (status is not None and status >= 500)
+                )
+                failure = HttpFailure(
+                    kind="http" if status is not None else "connection",
+                    exception_type=type(exc).__name__,
+                    status=status,
+                    attempts=attempt,
+                    elapsed=time.monotonic() - self._started_at,
+                )
+                self._last_failure = failure
+                if not retryable or attempt == _MAX_HTTP_ATTEMPTS:
+                    detail = f"HTTP {status}" if status is not None else type(exc).__name__
+                    raise CollectionError(
+                        f"HTTP 요청 실패({detail}): {url}", failure=failure
+                    ) from exc
+                if exc.response is not None:
+                    exc.response.close()
+                self.ensure_budget()
+                remaining = self.settings.collection_budget - (time.monotonic() - self._started_at)
+                time.sleep(min(self.settings.retry_delays[attempt - 1], remaining))
         raise AssertionError("unreachable")
 
     def fetch_notices(self) -> list[Notice]:

@@ -18,27 +18,19 @@ def post_to_slack(
     max_attempts: int = 3,
 ) -> None:
     client = session or requests.Session()
-    for attempt in range(1, max_attempts + 1):
-        try:
-            response = client.post(webhook_url, json=payload, timeout=timeout)
-        except (requests.Timeout, requests.ConnectionError) as exc:
-            if attempt == max_attempts:
-                raise SlackError("Slack 전송이 일시적 네트워크 오류로 실패했습니다.") from exc
-            time.sleep(0.25 * attempt)
-            continue
-
-        if response.status_code == 200 and response.text.strip() == "ok":
-            return
-        if response.status_code == 429 and attempt < max_attempts:
-            retry_after = float(response.headers["Retry-After"])
-            time.sleep(max(0.0, retry_after))
-            continue
-        if 500 <= response.status_code < 600 and attempt < max_attempts:
-            time.sleep(0.25 * attempt)
-            continue
+    try:
+        response = client.post(webhook_url, json=payload, timeout=timeout)
+    except (requests.Timeout, requests.ConnectionError) as exc:
         raise SlackError(
-            f"Slack 전송 실패(status={response.status_code}, body={response.text[:100]!r})"
-        )
+            "Slack 전송 네트워크 오류", method="webhook", outcome_unknown=True
+        ) from exc
+    if response.status_code == 200 and response.text.strip() == "ok":
+        return
+    raise SlackError(
+        f"Slack 전송 실패(status={response.status_code})",
+        method="webhook",
+        outcome_unknown=response.status_code >= 500,
+    )
 
 
 def _call_slack_api(
@@ -49,6 +41,7 @@ def _call_slack_api(
     timeout: tuple[float, float],
     max_attempts: int,
 ) -> dict[str, Any]:
+    max_attempts = max_attempts if method == "chat.update" else 1
     for attempt in range(1, max_attempts + 1):
         try:
             response = client.post(
@@ -59,7 +52,11 @@ def _call_slack_api(
             )
         except (requests.Timeout, requests.ConnectionError) as exc:
             if attempt == max_attempts:
-                raise SlackError(f"Slack {method} 호출이 네트워크 오류로 실패했습니다.") from exc
+                raise SlackError(
+                    f"Slack {method} 호출이 네트워크 오류로 실패했습니다.",
+                    method=method,
+                    outcome_unknown=True,
+                ) from exc
             time.sleep(0.25 * attempt)
             continue
 
@@ -71,15 +68,42 @@ def _call_slack_api(
             time.sleep(0.25 * attempt)
             continue
         if response.status_code != 200:
-            raise SlackError(f"Slack {method} 실패(status={response.status_code})")
+            raise SlackError(
+                f"Slack {method} 실패(status={response.status_code})",
+                method=method,
+                outcome_unknown=response.status_code >= 500,
+            )
 
         try:
             result = response.json()
         except requests.JSONDecodeError as exc:
-            raise SlackError(f"Slack {method} 응답이 올바른 JSON이 아닙니다.") from exc
+            raise SlackError(
+                f"Slack {method} 응답이 올바른 JSON이 아닙니다.",
+                method=method,
+                outcome_unknown=True,
+            ) from exc
+        if not isinstance(result, dict):
+            raise SlackError(
+                f"Slack {method} 응답 형식이 올바르지 않습니다.",
+                method=method,
+                outcome_unknown=True,
+            )
         if result.get("ok"):
+            if method == "chat.postMessage" and (
+                not isinstance(result.get("ts"), str) or not result["ts"]
+            ):
+                raise SlackError(
+                    "Slack chat.postMessage 응답에 메시지 ts가 없습니다.",
+                    method=method,
+                    outcome_unknown=True,
+                )
             return result
-        raise SlackError(f"Slack {method} 실패(error={result.get('error', 'unknown')})")
+        error = result.get("error", "unknown")
+        raise SlackError(
+            f"Slack {method} 실패(error={error})",
+            method=method,
+            outcome_unknown=error in {"internal_error", "fatal_error", "unknown"},
+        )
 
     raise AssertionError("unreachable")
 
@@ -92,7 +116,7 @@ def post_and_pin_to_slack(
     session: requests.Session | None = None,
     timeout: tuple[float, float] = (5.0, 15.0),
     max_attempts: int = 3,
-) -> None:
+) -> str:
     client = session or requests.Session()
     message = _call_slack_api(
         client,
@@ -105,14 +129,20 @@ def post_and_pin_to_slack(
     timestamp = message.get("ts")
     if not isinstance(timestamp, str) or not timestamp:
         raise SlackError("Slack chat.postMessage 응답에 메시지 ts가 없습니다.")
-    _call_slack_api(
-        client,
-        "pins.add",
-        bot_token,
-        {"channel": channel_id, "timestamp": timestamp},
-        timeout,
-        max_attempts,
-    )
+    try:
+        _call_slack_api(
+            client,
+            "pins.add",
+            bot_token,
+            {"channel": channel_id, "timestamp": timestamp},
+            timeout,
+            max_attempts,
+        )
+    except SlackError as exc:
+        raise SlackError(
+            str(exc), method="pins.add", outcome_unknown=exc.outcome_unknown, message_ts=timestamp
+        ) from exc
+    return timestamp
 
 
 def post_message_to_slack(
