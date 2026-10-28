@@ -251,3 +251,32 @@ def test_candidate_budget_exhaustion_preserves_earlier_causes(monkeypatch):
     assert caught.value.causes[0].failure.status == 503
     assert caught.value.causes[1].failure.budget_exhausted
     assert collector.fetches == [notices[0]]
+
+
+@pytest.mark.parametrize("pin_json", [None, []])
+def test_malformed_pin_response_preserves_confirmed_post(monkeypatch, pin_json):
+    import responses
+
+    payloads = [{"text": str(i), "mrkdwn": False, "blocks": []} for i in range(2)]
+    monkeypatch.setattr(app, "build_messages", lambda *args, **kwargs: payloads)
+    for name in (
+        "NAVER_API_HUB_CLIENT_ID",
+        "NAVER_API_HUB_CLIENT_SECRET",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID",
+    ):
+        monkeypatch.setenv(name, "value")
+    with responses.RequestsMock() as mocked:
+        mocked.post("https://slack.com/api/chat.postMessage", json={"ok": True, "ts": "123.456"})
+        mocked.post(
+            "https://slack.com/api/pins.add",
+            body="null" if pin_json is None else "[]",
+            content_type="application/json",
+        )
+        with pytest.raises(NanetMenuError) as caught:
+            app.run(date(2026, 7, 29), dry_run=False)
+        assert len(mocked.calls) == 2
+    assert caught.value.failure.stage == "pin"
+    assert caught.value.failure.posted_count == 1
+    assert caught.value.failure.message_timestamps == ("123.456",)
+    assert caught.value.failure.outcome_unknown

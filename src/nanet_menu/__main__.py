@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from nanet_menu.app import run
 from nanet_menu.config import RETRY_WORKFLOW_URL
-from nanet_menu.errors import NanetMenuError, SlackError, confirmed_pre_send_failure
+from nanet_menu.errors import DeliveryError, NanetMenuError, SlackError, confirmed_pre_send_failure
 from nanet_menu.formatter import format_failure_alert_payload
 from nanet_menu.slack import post_to_slack
 
@@ -37,6 +37,7 @@ def _post_failure_alert(target: date, error: NanetMenuError) -> None:
         _github_run_url(),
         RETRY_WORKFLOW_URL if confirmed_pre_send_failure(error) else None,
         retry_allowed=confirmed_pre_send_failure(error),
+        delivery_failure=error.failure if isinstance(error, DeliveryError) else None,
     )
     try:
         post_to_slack(webhook_url, payload)

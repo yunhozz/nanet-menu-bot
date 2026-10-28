@@ -1241,3 +1241,28 @@ def test_scheduled_endpoint_preserves_configuration():
     assert endpoint.scheduleTrigger["schedule"] == "0 10 * * 1-5"
     assert endpoint.scheduleTrigger["timeZone"] == "Asia/Seoul"
     assert endpoint.scheduleTrigger["retryConfig"]["retryCount"] == 0
+
+
+def test_partial_delivery_alert_shows_progress_in_blocks(monkeypatch):
+    from nanet_menu.errors import DeliveryError, DeliveryFailure
+
+    sent = []
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "token")
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "channel")
+    monkeypatch.setattr(
+        firebase_function, "post_message_to_slack", lambda *args: sent.append(args[-1])
+    )
+    failure = DeliveryFailure(
+        stage="post",
+        posted_count=1,
+        total_count=3,
+        payload_index=2,
+        message_timestamps=("123.456",),
+        outcome_unknown=True,
+    )
+    firebase_function._post_failure_alert(date(2026, 7, 31), DeliveryError("lost", failure=failure))
+    blocks = str(sent[0]["blocks"])
+    assert "1/3" in blocks
+    assert "2" in blocks and "123.456" in blocks
+    assert "불명" in blocks and "채널" in blocks and "로그" in blocks
+    assert not any(block["type"] == "actions" for block in sent[0]["blocks"])

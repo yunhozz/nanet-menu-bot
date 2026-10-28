@@ -20,7 +20,7 @@ from firebase_functions.options import Timezone
 from google.cloud.firestore_v1.services.firestore import FirestoreClient
 
 from nanet_menu.app import run
-from nanet_menu.errors import confirmed_pre_send_failure
+from nanet_menu.errors import DeliveryError, confirmed_pre_send_failure
 from nanet_menu.formatter import format_failure_alert_payload
 from nanet_menu.retry_store import (
     FIRESTORE_BUDGET,
@@ -60,6 +60,7 @@ def _post_failure_alert(target: date, error: Exception) -> None:
                 str(error),
                 retry_date=target if confirmed_pre_send_failure(error) else None,
                 retry_allowed=confirmed_pre_send_failure(error),
+                delivery_failure=error.failure if isinstance(error, DeliveryError) else None,
             ),
         )
     except Exception:

@@ -82,6 +82,12 @@ def _call_slack_api(
                 method=method,
                 outcome_unknown=True,
             ) from exc
+        if not isinstance(result, dict):
+            raise SlackError(
+                f"Slack {method} 응답 형식이 올바르지 않습니다.",
+                method=method,
+                outcome_unknown=True,
+            )
         if result.get("ok"):
             if method == "chat.postMessage" and (
                 not isinstance(result.get("ts"), str) or not result["ts"]

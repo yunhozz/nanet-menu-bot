@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TypedDict
 
+from nanet_menu.errors import DeliveryFailure
 from nanet_menu.models import DailyMenu
 
 _WEEKDAYS = "월화수목금토일"
@@ -26,6 +27,7 @@ def format_failure_alert_payload(
     retry_url: str | None = None,
     retry_date: date | None = None,
     retry_allowed: bool = False,
+    delivery_failure: DeliveryFailure | None = None,
 ) -> SlackPayload:
     detail = error[:2800]
     lines = [f"🚨 {target} 국회도서관 식단 알림 실패", detail]
@@ -57,7 +59,25 @@ def format_failure_alert_payload(
             }
         )
     if not retry_allowed:
-        lines.append("게시 여부를 채널과 로그에서 확인한 뒤 수동으로 조치하세요.")
+        status = []
+        if delivery_failure:
+            total = (
+                str(delivery_failure.total_count)
+                if delivery_failure.total_count is not None
+                else "불명"
+            )
+            status.append(f"확인된 게시: {delivery_failure.posted_count}/{total}")
+            status.append(f"실패 단계: {delivery_failure.stage}")
+            if delivery_failure.payload_index is not None:
+                status.append(f"실패 메시지 위치: {delivery_failure.payload_index}")
+            if delivery_failure.message_timestamps:
+                status.append("확인된 메시지 ts: " + ", ".join(delivery_failure.message_timestamps))
+            if delivery_failure.outcome_unknown:
+                status.append("전송 결과 불명")
+        status.append("게시 여부를 채널과 로그에서 확인한 뒤 수동으로 조치하세요.")
+        guidance = "\n".join(status)
+        lines.append(guidance)
+        blocks.append({"type": "section", "text": {"type": "plain_text", "text": guidance}})
     if retry_allowed and retry_url:
         lines.append(f"재시도 화면(dry_run 해제): {retry_url}")
         blocks.insert(
