@@ -91,6 +91,9 @@ def test_build_messages_includes_only_museum_lunch_in_output_and_image_search(mo
     attachment = Attachment("menu.pdf", "menu.pdf", "https://example.test/menu.pdf")
 
     class Collector:
+        def ensure_budget(self):
+            pass
+
         def fetch_notices(self):
             return [notice]
 
@@ -135,3 +138,116 @@ def test_build_messages_includes_only_museum_lunch_in_output_and_image_search(mo
     assert "석식" not in payloads[0]["text"]
     assert "박물관 저녁" not in payloads[0]["text"]
     assert image_search.queries == ["박물관 점심"]
+
+
+def test_prepare_failure_has_explicit_pre_send_evidence(monkeypatch):
+    monkeypatch.setattr(
+        app, "build_messages", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad"))
+    )
+    monkeypatch.setenv("NAVER_API_HUB_CLIENT_ID", "id")
+    monkeypatch.setenv("NAVER_API_HUB_CLIENT_SECRET", "secret")
+    with pytest.raises(NanetMenuError) as caught:
+        app.run(date(2026, 7, 29), dry_run=False)
+    assert caught.value.failure.stage == "prepare"
+    assert caught.value.failure.pre_send_confirmed
+    assert isinstance(caught.value.__cause__, ValueError)
+
+
+def test_partial_post_stops_and_preserves_progress(monkeypatch):
+    from nanet_menu.errors import SlackError
+
+    monkeypatch.setattr(
+        app,
+        "build_messages",
+        lambda *a, **k: [{"text": str(i), "mrkdwn": False, "blocks": []} for i in range(3)],
+    )
+    for name in (
+        "NAVER_API_HUB_CLIENT_ID",
+        "NAVER_API_HUB_CLIENT_SECRET",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID",
+    ):
+        monkeypatch.setenv(name, "value")
+    calls = []
+
+    def post(*args):
+        calls.append(args)
+        if len(calls) == 2:
+            raise SlackError("unknown", method="chat.postMessage", outcome_unknown=True)
+        return "123.456"
+
+    monkeypatch.setattr(app, "post_and_pin_to_slack", post)
+    with pytest.raises(NanetMenuError) as caught:
+        app.run(date(2026, 7, 29), dry_run=False)
+    assert len(calls) == 2
+    assert caught.value.failure.posted_count == 1
+    assert caught.value.failure.message_timestamps == ("123.456",)
+    assert caught.value.failure.payload_index == 2
+    assert caught.value.failure.outcome_unknown
+
+
+def test_pin_failure_preserves_posted_timestamp(monkeypatch):
+    from nanet_menu.errors import SlackError
+
+    monkeypatch.setattr(
+        app, "build_messages", lambda *a, **k: [{"text": "menu", "mrkdwn": False, "blocks": []}]
+    )
+    for name in (
+        "NAVER_API_HUB_CLIENT_ID",
+        "NAVER_API_HUB_CLIENT_SECRET",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID",
+    ):
+        monkeypatch.setenv(name, "value")
+
+    def fail(*args):
+        raise SlackError("pin", method="pins.add", message_ts="123.456")
+
+    monkeypatch.setattr(app, "post_and_pin_to_slack", fail)
+    with pytest.raises(NanetMenuError) as caught:
+        app.run(date(2026, 7, 29), dry_run=False)
+    assert caught.value.failure.stage == "pin"
+    assert caught.value.failure.posted_count == 1
+    assert caught.value.failure.message_timestamps == ("123.456",)
+
+
+def test_candidate_budget_exhaustion_preserves_earlier_causes(monkeypatch):
+    from nanet_menu.errors import CollectionError, HttpFailure, MenuParseError
+
+    target = date(2026, 7, 29)
+    notices = [
+        Notice("1", "1", "first", target, "https://example.test/1"),
+        Notice("2", "2", "second", target, "https://example.test/2"),
+    ]
+    first = CollectionError(
+        "first failed", failure=HttpFailure(kind="http", status=503, attempts=5)
+    )
+    exhausted = CollectionError(
+        "budget exhausted", failure=HttpFailure(kind="budget", budget_exhausted=True)
+    )
+
+    class Collector:
+        def __init__(self):
+            self.checks = 0
+            self.fetches = []
+
+        def fetch_notices(self):
+            return notices
+
+        def ensure_budget(self):
+            self.checks += 1
+            if self.checks == 2:
+                raise exhausted
+
+        def fetch_attachment(self, notice):
+            self.fetches.append(notice)
+            raise first
+
+    collector = Collector()
+    monkeypatch.setattr(app, "order_notice_candidates", lambda notices, target: notices)
+    with pytest.raises(MenuParseError) as caught:
+        app.build_messages(target, collector=collector)
+    assert caught.value.causes == (first, exhausted)
+    assert caught.value.causes[0].failure.status == 503
+    assert caught.value.causes[1].failure.budget_exhausted
+    assert collector.fetches == [notices[0]]

@@ -4,7 +4,14 @@ from datetime import date
 
 from nanet_menu.collector import NanetCollector
 from nanet_menu.date_range import order_notice_candidates
-from nanet_menu.errors import MenuParseError, NanetMenuError
+from nanet_menu.errors import (
+    CollectionError,
+    DeliveryError,
+    DeliveryFailure,
+    MenuParseError,
+    NanetMenuError,
+    SlackError,
+)
 from nanet_menu.formatter import SlackPayload, format_slack_payloads
 from nanet_menu.image_search import NaverImageSearch
 from nanet_menu.models import DailyMenu
@@ -23,9 +30,11 @@ def build_messages(
     LOGGER.info("목록 수집: 식단 공지 검색")
     notices = client.fetch_notices()
     errors: list[str] = []
+    causes: list[NanetMenuError] = []
     for notice in order_notice_candidates(notices, target)[:5]:
         LOGGER.info("게시물 선택: %s", notice.title)
         try:
+            client.ensure_budget()
             attachment = client.fetch_attachment(notice)
             LOGGER.info("PDF 다운로드: %s", attachment.filename)
             pdf_bytes = client.download_pdf(attachment, notice.detail_url)
@@ -49,36 +58,63 @@ def build_messages(
             return format_slack_payloads(menu, image_urls)
         except NanetMenuError as exc:
             errors.append(f"{notice.title}: {exc}")
+            causes.append(exc)
             LOGGER.warning("후보 게시물 처리 실패: %s", exc)
+            if isinstance(exc, CollectionError) and exc.failure and exc.failure.budget_exhausted:
+                break
     detail = "; ".join(errors)
-    raise MenuParseError(f"{target.isoformat()} 식단을 최근 공지에서 찾지 못했습니다. {detail}")
+    raise MenuParseError(
+        f"{target.isoformat()} 식단을 최근 공지에서 찾지 못했습니다. {detail}", causes=tuple(causes)
+    )
 
 
 def run(target: date, *, dry_run: bool) -> str:
-    client_id = os.environ.get("NAVER_API_HUB_CLIENT_ID")
-    client_secret = os.environ.get("NAVER_API_HUB_CLIENT_SECRET")
-    if bool(client_id) != bool(client_secret):
-        raise NanetMenuError(
-            "이미지 검색 단계: NAVER API HUB Client ID와 Client Secret을 모두 설정해야 합니다."
-        )
-    if not dry_run and not client_id:
-        raise NanetMenuError(
-            "이미지 검색 단계: NAVER_API_HUB_CLIENT_ID와 "
-            "NAVER_API_HUB_CLIENT_SECRET 환경변수가 없습니다."
-        )
-    image_search = NaverImageSearch(client_id, client_secret) if client_id else None
-    payloads = build_messages(target, image_search=image_search)
-    text = "\n\n".join(payload["text"] for payload in payloads)
-    if dry_run:
-        print(text)
-        return text
-    bot_token = os.environ.get("SLACK_BOT_TOKEN")
-    if not bot_token:
-        raise NanetMenuError("Slack 전송 단계: SLACK_BOT_TOKEN 환경변수가 없습니다.")
-    channel_id = os.environ.get("SLACK_CHANNEL_ID")
-    if not channel_id:
-        raise NanetMenuError("Slack 전송 단계: SLACK_CHANNEL_ID 환경변수가 없습니다.")
+    try:
+        client_id = os.environ.get("NAVER_API_HUB_CLIENT_ID")
+        client_secret = os.environ.get("NAVER_API_HUB_CLIENT_SECRET")
+        if bool(client_id) != bool(client_secret):
+            raise NanetMenuError(
+                "이미지 검색 단계: NAVER API HUB Client ID와 Client Secret을 모두 설정해야 합니다."
+            )
+        if not dry_run and not client_id:
+            raise NanetMenuError(
+                "이미지 검색 단계: NAVER_API_HUB_CLIENT_ID와 "
+                "NAVER_API_HUB_CLIENT_SECRET 환경변수가 없습니다."
+            )
+        image_search = NaverImageSearch(client_id, client_secret) if client_id else None
+        payloads = build_messages(target, image_search=image_search)
+        text = "\n\n".join(payload["text"] for payload in payloads)
+        if dry_run:
+            print(text)
+            return text
+        bot_token = os.environ.get("SLACK_BOT_TOKEN")
+        if not bot_token:
+            raise NanetMenuError("Slack 전송 단계: SLACK_BOT_TOKEN 환경변수가 없습니다.")
+        channel_id = os.environ.get("SLACK_CHANNEL_ID")
+        if not channel_id:
+            raise NanetMenuError("Slack 전송 단계: SLACK_CHANNEL_ID 환경변수가 없습니다.")
+    except Exception as exc:
+        raise DeliveryError(
+            str(exc), failure=DeliveryFailure(stage="prepare", pre_send_confirmed=True)
+        ) from exc
     LOGGER.info("Slack 전송")
-    for payload in payloads:
-        post_and_pin_to_slack(bot_token, channel_id, payload)
+    timestamps: list[str] = []
+    for index, payload in enumerate(payloads, 1):
+        try:
+            timestamps.append(post_and_pin_to_slack(bot_token, channel_id, payload))
+        except Exception as exc:
+            is_slack = isinstance(exc, SlackError)
+            timestamp = exc.message_ts if is_slack else None
+            if timestamp:
+                timestamps.append(timestamp)
+            stage = "pin" if timestamp else "post" if is_slack else "unknown"
+            failure = DeliveryFailure(
+                stage=stage,
+                posted_count=len(timestamps),
+                total_count=len(payloads),
+                payload_index=index,
+                message_timestamps=tuple(timestamps),
+                outcome_unknown=exc.outcome_unknown if is_slack else True,
+            )
+            raise DeliveryError(str(exc), failure=failure) from exc
     return text

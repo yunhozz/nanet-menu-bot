@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+import requests
 import responses
 
 from nanet_menu.errors import SlackError
@@ -31,29 +32,16 @@ def test_webhook_4xx_is_not_retried():
     assert len(responses.calls) == 1
 
 
+@pytest.mark.parametrize("status", [429, 503])
 @responses.activate
-def test_webhook_5xx_is_retried(monkeypatch):
-    monkeypatch.setattr("nanet_menu.slack.time.sleep", lambda _: None)
-    responses.post(WEBHOOK, body="error", status=503)
-    responses.post(WEBHOOK, body="error", status=503)
-    responses.post(WEBHOOK, body="ok", status=200)
-
-    post_to_slack(WEBHOOK, PAYLOAD)
-
-    assert len(responses.calls) == 3
-
-
-@responses.activate
-def test_webhook_429_honors_retry_after(monkeypatch):
+def test_webhook_does_not_retry_uncertain_response(monkeypatch, status):
     delays = []
     monkeypatch.setattr("nanet_menu.slack.time.sleep", delays.append)
-    responses.post(WEBHOOK, body="rate_limited", status=429, headers={"Retry-After": "2"})
-    responses.post(WEBHOOK, body="ok", status=200)
-
-    post_to_slack(WEBHOOK, PAYLOAD)
-
-    assert delays == [2.0]
-    assert len(responses.calls) == 2
+    responses.post(WEBHOOK, body="error", status=status)
+    with pytest.raises(SlackError):
+        post_to_slack(WEBHOOK, PAYLOAD, max_attempts=4)
+    assert len(responses.calls) == 1
+    assert delays == []
 
 
 @responses.activate
@@ -80,8 +68,9 @@ def test_post_and_pin_success():
         status=200,
     )
 
-    post_and_pin_to_slack(BOT_TOKEN, CHANNEL_ID, PAYLOAD)
+    timestamp = post_and_pin_to_slack(BOT_TOKEN, CHANNEL_ID, PAYLOAD)
 
+    assert timestamp == "1234567890.123456"
     assert len(responses.calls) == 2
     assert responses.calls[0].request.headers["Authorization"] == f"Bearer {BOT_TOKEN}"
     assert responses.calls[0].request.body == (
@@ -135,5 +124,46 @@ def test_pin_failure_is_reported():
         status=200,
     )
 
-    with pytest.raises(SlackError, match="pins.add.*missing_scope"):
+    with pytest.raises(SlackError, match="pins.add.*missing_scope") as caught:
         post_and_pin_to_slack(BOT_TOKEN, CHANNEL_ID, PAYLOAD)
+    assert caught.value.message_ts == "1234567890.123456"
+
+
+@pytest.mark.parametrize("body", [{"ok": True}, {"ok": False, "error": "internal_error"}])
+@responses.activate
+def test_post_unconfirmed_response_is_unknown(body):
+    responses.post("https://slack.com/api/chat.postMessage", json=body, status=200)
+    with pytest.raises(SlackError) as caught:
+        post_message_to_slack(BOT_TOKEN, CHANNEL_ID, PAYLOAD, max_attempts=4)
+    assert caught.value.outcome_unknown
+    assert len(responses.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "problem", [requests.Timeout("timeout"), requests.ConnectionError("lost"), 500, 429]
+)
+@responses.activate
+def test_post_message_is_never_repeated_for_uncertain_response(monkeypatch, problem):
+    delays = []
+    monkeypatch.setattr("nanet_menu.slack.time.sleep", delays.append)
+    if isinstance(problem, int):
+        responses.post("https://slack.com/api/chat.postMessage", status=problem)
+    else:
+        responses.post("https://slack.com/api/chat.postMessage", body=problem)
+    with pytest.raises(SlackError):
+        post_and_pin_to_slack(BOT_TOKEN, CHANNEL_ID, PAYLOAD, max_attempts=4)
+    assert len(responses.calls) == 1
+    assert not delays
+
+
+@responses.activate
+def test_update_still_retries_transient_failure(monkeypatch):
+    from nanet_menu.slack import update_message_to_slack
+
+    delays = []
+    monkeypatch.setattr("nanet_menu.slack.time.sleep", delays.append)
+    responses.post("https://slack.com/api/chat.update", status=503)
+    responses.post("https://slack.com/api/chat.update", json={"ok": True}, status=200)
+    update_message_to_slack(BOT_TOKEN, CHANNEL_ID, "123.456", {"text": "updated"})
+    assert len(responses.calls) == 2
+    assert delays == [0.25]

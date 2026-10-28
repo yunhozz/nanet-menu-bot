@@ -186,6 +186,7 @@ def test_failure_alert_is_plain_text_and_links_to_the_workflow_run():
         "PDF에서 <!here> *식단*을 찾지 못했습니다.",
         "https://github.com/example/nanet-menu-bot/actions/runs/1234",
         retry_url,
+        retry_allowed=True,
     )
 
     assert payload["mrkdwn"] is False
@@ -231,6 +232,7 @@ def test_failure_alert_can_offer_an_interactive_retry_for_its_date():
         target,
         "식단 수집 실패",
         retry_date=target,
+        retry_allowed=True,
     )
 
     button = payload["blocks"][3]["elements"][0]
@@ -244,6 +246,7 @@ def test_failure_alert_link_button_is_not_an_interactive_retry():
         date(2026, 7, 29),
         "식단 수집 실패",
         retry_url="https://github.com/example/actions/workflows/daily-menu.yml",
+        retry_allowed=True,
     )
 
     button = payload["blocks"][3]["elements"][0]
@@ -269,3 +272,14 @@ def test_large_menu_is_split_without_cutting_sections():
     for index in range(1, 9):
         section_heading = f"{index}식당 · 중식"
         assert sum(section_heading in payload["text"] for payload in payloads) == 1
+
+
+def test_unknown_delivery_suppresses_retry_arguments():
+    payload = format_failure_alert_payload(
+        date(2026, 7, 29),
+        "unknown",
+        retry_date=date(2026, 7, 29),
+        retry_url="https://example.test/retry",
+    )
+    assert not any(block["type"] == "actions" for block in payload["blocks"])
+    assert "https://example.test/retry" not in payload["text"]

@@ -11,4 +11,6 @@ class Settings:
         "&searchKeycode=ticon&searchKeyword=%EC%8B%9D%EB%8B%A8"
     )
     timeout: tuple[float, float] = (10.0, 30.0)
+    collection_budget: float = 180.0
+    retry_delays: tuple[float, ...] = (5.0, 10.0, 20.0, 30.0)
     user_agent: str = "nanet-menu-bot/0.1 (+https://github.com/)"

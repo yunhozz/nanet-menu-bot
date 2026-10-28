@@ -62,3 +62,19 @@ def test_failed_dry_run_does_not_post_alert(monkeypatch):
 
 def raise_if_called():
     raise AssertionError("dry-run failure must not send a Slack alert")
+
+
+def test_cli_retry_link_requires_confirmed_pre_send_failure(monkeypatch):
+    from nanet_menu.errors import DeliveryError, DeliveryFailure
+
+    sent = []
+    monkeypatch.setenv("SLACK_ALERT_WEBHOOK_URL", "https://example.test/webhook")
+    monkeypatch.setattr(__main__, "post_to_slack", lambda url, payload: sent.append(payload))
+    target = date(2026, 7, 29)
+    __main__._post_failure_alert(target, MenuParseError("unknown"))
+    __main__._post_failure_alert(
+        target,
+        DeliveryError("prepare", failure=DeliveryFailure(stage="prepare", pre_send_confirmed=True)),
+    )
+    assert not any(block["type"] == "actions" for block in sent[0]["blocks"])
+    assert any(block["type"] == "actions" for block in sent[1]["blocks"])

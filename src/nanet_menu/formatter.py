@@ -25,6 +25,7 @@ def format_failure_alert_payload(
     run_url: str | None = None,
     retry_url: str | None = None,
     retry_date: date | None = None,
+    retry_allowed: bool = False,
 ) -> SlackPayload:
     detail = error[:2800]
     lines = [f"🚨 {target} 국회도서관 식단 알림 실패", detail]
@@ -55,7 +56,9 @@ def format_failure_alert_payload(
                 ],
             }
         )
-    if retry_url:
+    if not retry_allowed:
+        lines.append("게시 여부를 채널과 로그에서 확인한 뒤 수동으로 조치하세요.")
+    if retry_allowed and retry_url:
         lines.append(f"재시도 화면(dry_run 해제): {retry_url}")
         blocks.insert(
             2,
@@ -87,7 +90,7 @@ def format_failure_alert_payload(
                 ],
             },
         )
-    if retry_date:
+    if retry_allowed and retry_date:
         lines.append(f"재시도 버튼을 눌러 {retry_date} 식단 전송을 다시 시작합니다.")
         blocks.insert(
             2,
